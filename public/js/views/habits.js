@@ -1,7 +1,7 @@
 // HABITS — streaks, this week's days (tap a day to fix history) and a 12-week history grid.
 import { S, live, logsFor, elementById, isotopeById } from '../state.js';
 import * as M from '../model.js';
-import { esc } from '../ui.js';
+import { esc, foldSection } from '../ui.js';
 
 const CELL = { done: '✓', partial: '~', skipped: '–' };
 const FREQ = [['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY']];
@@ -48,6 +48,6 @@ export function render() {
   return FREQ.map(([key, label]) => {
     const list = habits.filter(h => M.frequency(h) === key);
     if (!list.length) return '';
-    return `<div class="section vt"><span>// ${label}</span><span>${list.length}</span></div>${list.map(h => card(h, k)).join('')}`;
+    return foldSection('habits:' + key, label, list.length, list.map(h => card(h, k)).join(''), S.ui.folded.has('habits:' + key));
   }).join('') + `<p class="dim" style="font-size:13px;margin-top:14px">tap a day to change it: done → skipped → clear. skipping never breaks a streak.</p>`;
 }

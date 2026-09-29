@@ -13,6 +13,7 @@ import { openEditor, openMenu, openRenameCategory, openHelp } from './views/shee
 const ROUTES = { today: Today, calendar: Calendar, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
 const quick = document.querySelector('.quick');
+const daybar = document.getElementById('daybar');
 let installPrompt = null;
 let justChecked = null;
 let renderedDay = M.todayKey();
@@ -27,12 +28,13 @@ function render() {
   const route = S.ui.route;
   applySettings();
   const scroll = window.scrollY;
+  daybar.innerHTML = route === 'today' ? Today.renderTop() : '';
   main.innerHTML = ROUTES[route].render({ just: justChecked, canInstall: !!installPrompt });
   justChecked = null;
   window.scrollTo(0, scroll);
   quick.classList.toggle('hidden', route !== 'today');
   const input = quick.querySelector('input');
-  input.placeholder = S.ui.date === M.todayKey() ? '#fitness workout mon wed fri' : `add to ${M.prettyDate(S.ui.date)}`;
+  input.placeholder = S.ui.date === M.todayKey() ? 'add a task, habit or list…' : `add to ${M.prettyDate(S.ui.date)}…`;
   document.querySelectorAll('nav.tabs a').forEach(a => {
     const on = a.dataset.route === route;
     a.classList.toggle('on', on);
@@ -109,6 +111,13 @@ const actions = {
   edit: d => openEditor(d.id),
   menu: d => openMenu(d.id),
   filter(d) { S.ui.filterEl = d.el || null; render(); },
+  async fold(d) {
+    const sec = main.querySelector(`section.sec[data-sec="${d.sec}"]`);
+    const on = !S.ui.folded.has(d.sec);
+    sec?.classList.toggle('folded', on);
+    sec?.querySelector('.section')?.setAttribute('aria-expanded', String(!on));
+    await A.setFolded(d.sec, on);
+  },
   lowonly() { S.ui.lowOnly = !S.ui.lowOnly; render(); },
   async day(d) {
     const cur = A.logsFor(d.id).get(d.date)?.status;
@@ -122,8 +131,7 @@ const actions = {
   async delel(d) {
     const e = A.elementById(d.id);
     const n = A.atomsInElement(d.id).length;
-    if (n) return toast(`move or delete its ${n} item${n === 1 ? '' : 's'} first`);
-    if (!confirm(`Delete the ${e.name} category?`)) return;
+    if (!confirm(`Delete the ${e.name} category?${n ? `\n\nIts ${n} item${n === 1 ? '' : 's'} will stay, just without a category.` : ''}`)) return;
     await A.deleteElement(d.id); S.ui.openEl = null; if (S.ui.filterEl === d.id) S.ui.filterEl = null; toast('category deleted');
   },
   async export() {

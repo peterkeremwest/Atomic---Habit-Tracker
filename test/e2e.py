@@ -79,6 +79,17 @@ async def main():
         await pg.screenshot(path=OUT + '6-categories.png', full_page=True)
         await pg.click('nav a[data-route=sys]'); await pg.wait_for_selector('.sys')
         await pg.screenshot(path=OUT + '7-settings.png', full_page=True)
+        # ----- folding -----
+        await pg.goto(URL + '#/today'); await pg.wait_for_selector('.sec')
+        await pg.click('section[data-sec="today:daily"] > button.section'); await pg.wait_for_timeout(400)
+        assert await pg.locator('section.folded[data-sec="today:daily"]').count() == 1
+        await pg.screenshot(path=OUT + '12-folded.png')
+        await pg.reload(); await pg.wait_for_selector('.sec')
+        assert await pg.locator('section.folded[data-sec="today:daily"]').count() == 1, 'fold remembered'
+        await pg.click('section[data-sec="today:daily"] > button.section'); await pg.wait_for_timeout(400)
+        assert await pg.locator('section.folded').count() == 0
+        print(await add(pg, 'do dishes #onetime'))
+        assert await pg.locator('section[data-sec="today:once"] .row', has_text='do dishes').count() == 1
         # ----- dates -----
         await pg.goto(URL + '#/today'); await pg.wait_for_selector('.daynav')
         today_label = await pg.locator('.daynav .dlabel').inner_text()

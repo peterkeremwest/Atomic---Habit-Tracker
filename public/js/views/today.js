@@ -1,7 +1,7 @@
 // TODAY — everything for today, grouped by how often it repeats. Checked items stay visible.
 import { S, live, logsFor, elementById, isotopeById } from '../state.js';
 import * as M from '../model.js';
-import { esc } from '../ui.js';
+import { esc, foldSection } from '../ui.js';
 
 const MARK = { done: '✓', met: '✓', partial: '~', skipped: '–' };
 
@@ -88,6 +88,8 @@ const SECTIONS = [
   ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'],
 ];
 
+export function renderTop() { return dayNav(S.ui.date); }
+
 export function dayNav(k) {
   const real = M.todayKey();
   return `<div class="daynav">
@@ -125,24 +127,16 @@ export function render({ just } = {}) {
     const list = bySection.get(key);
     const n = key === 'schedule' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
     const rows = list.map(a => key === 'schedule' ? blockRow(a, k) : key === 'list' ? listCard(a, k, just) : atomRow(a, k, { just })).join('');
-    return `<div class="section vt"><span>// ${label}</span><span>${n}</span></div>${rows}`;
+    return foldSection('today:' + key, label, n, rows, S.ui.folded.has('today:' + key));
   }).join('');
 
   const nothingAtAll = !live(S.atoms).length;
-  return `${dayNav(k)}
+  return `
     <div class="progress" aria-label="${doneN} of ${counted.length} done">
       <div class="bar"><i style="width:${pct}%"></i></div>
       <span class="vt glow">${counted.length ? `${doneN} of ${counted.length} done` : 'nothing due'}</span>
     </div>
     <div class="chips" role="toolbar" aria-label="Filter by category">${chips.join('')}</div>
-    ${nothingAtAll ? `<div class="empty" style="margin-top:20px">
-        <p>&gt; nothing here yet. type below, for example:</p>
-        <p class="tag">#fitness workout monday wednesday friday</p>
-        <p class="tag">read 20 min daily #personal</p>
-        <p class="tag">#timeblock work 5pm - 11pm</p>
-        <p class="tag">#list groceries: eggs, soap, juice</p>
-        <p class="tag">pay rent monthly 1st #money</p>
-        <p>&gt; tap <span class="vt">?</span> next to the input for everything it understands.</p>
-      </div>` : (body || `<p class="empty" style="margin-top:20px">&gt; nothing for ${k === real ? 'today' : 'this day'}${filterEl || lowOnly ? ' with this filter' : ''}.</p>`)}
+    ${nothingAtAll ? `<p class="empty" style="margin-top:16px">&gt; nothing here yet. type in the box above, or tap <span class="vt">?</span> for examples.</p>` : (body || `<p class="empty" style="margin-top:20px">&gt; nothing for ${k === real ? 'today' : 'this day'}${filterEl || lowOnly ? ' with this filter' : ''}.</p>`)}
   `;
 }

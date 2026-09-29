@@ -97,3 +97,11 @@ assert.equal(M.mergeRecords([a1], [b1]).changed.length, 1); assert.equal(M.merge
 assert.equal(M.describeRepeat(d), 'every Monday, Wednesday & Friday');
 assert.equal(M.describeRepeat(mo), 'every month on the 31st');
 console.log('model tests passed');
+{
+  const q = t => M.parseQuickAdd(t, elements, isotopes, T)[0];
+  let x = q('do dishes #onetime'); assert.equal(x.kind, 'task'); assert.equal(x.newCategory, null); assert.equal(x.title, 'do dishes');
+  x = q('stretch #daily #fitness'); assert.equal(x.kind, 'habit'); assert.equal(x.repeat.type, 'daily'); assert.equal(x.elementId, elements[0].id);
+  x = q('call mom #weekly'); assert.deepEqual(x.repeat, { type: 'perWeek', count: 1 });
+  x = q('floss #habit'); assert.equal(x.kind, 'habit');
+  console.log('keyword tag tests passed');
+}

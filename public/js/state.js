@@ -7,7 +7,7 @@ import * as M from './model.js';
 export const S = {
   elements: [], isotopes: [], atoms: [], logs: [],
   settings: { theme: 'green', scanlines: true },
-  ui: { route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
+  ui: { folded: new Set(), route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
   pending: 0,
 };
 
@@ -44,6 +44,7 @@ export async function load() {
     await db.setMeta('seeded', true);
   }
   S.settings = { ...S.settings, ...(await db.getMeta('settings', {})) };
+  S.ui.folded = new Set(await db.getMeta('folded', []));
   reindex();
   await refreshPending();
 }
@@ -174,6 +175,7 @@ export async function updateElement(id, patch) {
 }
 export const atomsInElement = id => live(S.atoms).filter(a => a.elementId === id);
 export async function deleteElement(id) {
+  for (const a of atomsInElement(id)) await updateAtom(a.id, { elementId: null, isotopeId: null });
   for (const i of isotopesOf(id)) await save('isotopes', { ...i, deletedAt: M.nowIso() });
   return updateElement(id, { deletedAt: M.nowIso() });
 }
@@ -183,6 +185,12 @@ export async function deleteIsotope(id) {
   const i = isotopeById(id); if (!i) return;
   for (const a of live(S.atoms).filter(a => a.isotopeId === id)) await updateAtom(a.id, { isotopeId: null });
   return save('isotopes', { ...i, deletedAt: M.nowIso() });
+}
+
+// ---------- folded sections (saved quietly: no re-render, so the fold animation can play) ----------
+export async function setFolded(key, on) {
+  on ? S.ui.folded.add(key) : S.ui.folded.delete(key);
+  await db.setMeta('folded', [...S.ui.folded]);
 }
 
 // ---------- settings ----------

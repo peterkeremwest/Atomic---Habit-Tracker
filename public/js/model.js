@@ -319,6 +319,9 @@ function takeTags(text) {
     const l = name.toLowerCase();
     if (['list', 'checklist'].includes(l)) { special.add('list'); return ' '; }
     if (['timeblock', 'block', 'tb', 'schedule'].includes(l)) { special.add('block'); return ' '; }
+    if (['onetime', 'once', 'task', 'todo'].includes(l)) { special.add('task'); return ' '; }
+    if (['daily', 'weekly', 'monthly', 'weekdays', 'weekends'].includes(l)) return ` ${l} `;
+    if (l === 'habit') { special.add('habit'); return ' '; }
     tags.push({ name, sub: sub ? sub.trim() : null });
     return ' ';
   });
@@ -432,6 +435,8 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   else if (dw.repeat) out.repeat = dw.repeat;
   else if (weekly) out.repeat = { type: 'perWeek', count: 1 };
   if (!out.repeat && out.target.kind === 'count') out.repeat = { type: 'daily' };
+  if (!out.repeat && special.has('habit')) out.repeat = { type: 'daily' };
+  if (special.has('task')) out.repeat = null;
   if (out.repeat) out.kind = 'habit'; else out.dueDate = dw.date || (defaultDate !== today ? defaultDate : null);
   out.title = clean(dw.rest.join(' '));
   return [out];
