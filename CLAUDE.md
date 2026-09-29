@@ -60,7 +60,7 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 | Sync outbox (queued offline changes) ◆ | The outgoing-mail tray: changes made while the office was unreachable wait here and are sent when it reopens |
 | Web app manifest ◆ | The business registration card: the company's name, logo and colors, used when the app is "installed" on a phone |
 | JavaScript modules (multiple files) ◆ | Separate department binders instead of one giant company manual, so you open only the binder you need |
-| AWS Amplify Hosting ◆ | The storefront-leasing office: whenever new blueprints are filed (a push to GitHub), it rebuilds the shop front automatically |
+| Cloudflare (static hosting) ◆ | An outside storefront-leasing company with shopfronts in every city: whenever new blueprints are filed (a push to GitHub), it rebuilds the shop front automatically. The back offices (AWS) stay with the company |
 | Cognito user pool shared by two apps ◆ | One badge office issuing badges that open the doors of both branch offices (Forge and Atomic) |
 | Cognito app client ◆ | The badge reader installed at one particular branch's door |
 | EventBridge custom event bus ◆ | A private PA channel that only Forge and Atomic are tuned into |
@@ -82,7 +82,8 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
 ### Hosting
-- **AWS Amplify Hosting**, connected to the GitHub repo: push to `main` → automatic publish. This is the AWS equivalent of Forge's Netlify setup, and it serves through CloudFront behind the scenes. Region `us-east-1`.
+- **Frontend: Cloudflare** static hosting (Pages, or Workers static assets, whichever Cloudflare recommends at setup time), connected to the GitHub repo: push to `main` → automatic publish. Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
+- **Backend stays on AWS** (`us-east-1`). The Cloudflare URL must be listed as an allowed origin in the Atomic API's CORS settings (Phase 2).
 
 ### Backend (Phase 2+), a SAM stack like Forge's
 - **Auth:** reuse Forge's Cognito user pool (`us-east-1_xmt1rEukj`) with a **new app client for Atomic**. One login works in both apps, and both see the same user `sub`, which is what makes cross-app sync possible.
@@ -105,15 +106,15 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 | Phase | Versions | Goal |
 |---|---|---|
 | 0 | v0.x | Planning, repo, stack |
-| 1 | v1.x | Local-only PWA MVP live on Amplify: Elements/Isotopes, Atoms, Today + Habits screens, terminal theme |
+| 1 | v1.x | Local-only PWA MVP live on Cloudflare: Elements/Isotopes, Atoms, Today + Habits screens, terminal theme |
 | 2 | v2.x | Cognito login (shared pool) + SAM backend + cloud sync |
 | 3 | v3.x | Forge ↔ Atomic sync via EventBridge |
 | 4 | v4.x | Orbits, States, reminders (Scheduler + Web Push) |
 | 5 | v5.x | Monitoring, weekly review, Bedrock suggestions |
 
 ## Live Deployment
-- **Repo:** not created yet. Suggested: `github.com/peterkeremwest/atomic` (private or public, owner's choice).
-- **Host:** AWS Amplify Hosting (not connected yet).
+- **Repo:** `github.com/peterkeremwest/atomic`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").
+- **Host:** Cloudflare (not connected yet).
 - **Live URL:** none yet.
 - **Git from `device_bash`:** use Forge's proven pattern. `credential.helper` is set repo-locally to `store --file=.git-credentials`, and `.git-credentials` stays in `.gitignore` (never committed). It needs a fine-grained PAT that includes this repo. Never assume a push succeeded without checking `git status`/`git log origin/main`.
 - **Git lock files from `device_bash`:** the Cowork shell can't delete files in this folder unless deletion is granted for the session. Without it, every git command leaves `.git/index.lock` / `HEAD.lock` behind and the next one fails. Ask for delete permission once per session before running git here, and if a lock is left over, remove `.git/*.lock` (only when no other git process is running).
