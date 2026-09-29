@@ -3,7 +3,7 @@
 // Only ./public is published. CLAUDE.md, checkpoints/ and backend/ are never served.
 // "name" must match the Worker name in the Cloudflare dashboard, or Workers Builds fails.
 {
-  "name": "atomic",
+  "name": "app",
   "compatibility_date": "2026-09-29",
   "assets": {
     "directory": "./public",
