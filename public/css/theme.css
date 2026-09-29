@@ -199,3 +199,38 @@ nav.tabs a.on::before, nav.tabs a.on::after { content: ''; }
 nav.tabs a.on { box-shadow: inset 0 2px 0 var(--fg); text-shadow: 0 0 6px rgba(var(--fg-rgb), .5); }
 .quick .btn { padding: 4px 10px; }
 .row .meta { font-size: 13px; }
+
+/* ---------- v0.1.3: header cursor, day navigation, calendar ---------- */
+header.top h1 { display: flex; align-items: baseline; }
+.cursor { display: inline-block; width: .55em; height: .82em; margin-left: .12em; background: var(--fg);
+  box-shadow: 0 0 8px rgba(var(--fg-rgb), .7); animation: cursor 1.06s steps(1) infinite; align-self: center; }
+.cursor.offline { background: none; box-shadow: none; width: auto; height: auto; color: var(--warn); font-size: .8em;
+  letter-spacing: 0; text-shadow: 0 0 8px var(--warn); animation-duration: 1.6s; }
+@keyframes cursor { 50% { opacity: 0; } }
+.daynav { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.daynav .btn { font-size: 18px; padding: 6px 12px; }
+.daynav .dlabel { flex: 1; text-align: center; }
+.daynav .dlabel span { display: block; font-size: 24px; line-height: 1.1; }
+.daynav .dlabel small { color: var(--muted); font-size: 12px; }
+.backtoday { display: block; width: 100%; margin: 0 0 12px; font-size: 18px; border-color: var(--fg); }
+.chk:disabled { opacity: .35; cursor: not-allowed; }
+.cal { margin-top: 4px; }
+.calnav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.calnav span { font-size: 26px; }
+.calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calgrid.head span { text-align: center; color: var(--muted); font-size: 12px; padding-bottom: 4px; }
+.calgrid.days button { aspect-ratio: 1; border: 1px solid var(--faint); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; color: var(--fg); }
+.calgrid.days button .n { font-size: 20px; line-height: 1; }
+.calgrid.days button.future .n { color: var(--muted); }
+.calgrid.days button.today { border-color: var(--fg); box-shadow: 0 0 6px rgba(var(--fg-rgb), .5); }
+.calgrid.days button.sel { outline: 1px dashed var(--fg); outline-offset: 2px; }
+.calgrid.days button.all { background: rgba(var(--fg-rgb), .16); }
+.dots { display: flex; gap: 3px; height: 6px; }
+.dots i, .legend i { display: inline-block; width: 6px; height: 6px; }
+i.p { background: var(--warn); }
+i.s { background: var(--dim); }
+i.a { background: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; font-size: 12px; color: var(--muted); margin-top: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+nav.tabs a { font-size: 17px; }

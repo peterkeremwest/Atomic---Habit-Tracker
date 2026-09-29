@@ -12,7 +12,7 @@
 - **Chat naming convention (same as Forge):** name a chat `vX.Y : <what's being built>` only when it's clearly implementation work toward the next checkpoint (take `X.Y` from LINEAGE.md). Never version-number chats prefixed `Sidebar:` (tangents), `Meta:` (how we work) or `Scratch:` (throwaway). If a chat is ambiguous, leave it unnumbered.
 
 ## Checkpoint Versioning
-- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1_CHECKPOINT.md`** (Phase 0, initiation: name, naming system, design direction, feature plan, sync-ready data model). Built but not yet checkpointed: v0.1.1 (first screens) and v0.1.2 (plain-language UI, frequency sections, time blocks, lists, tags). Cut `v0.1.2_CHECKPOINT.md` when the owner ends the session.
+- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1_CHECKPOINT.md`** (Phase 0, initiation: name, naming system, design direction, feature plan, sync-ready data model). Built but not yet checkpointed: v0.1.1 (first screens), v0.1.2 (plain-language UI, frequency sections, time blocks, lists, tags) and v0.1.3 (Forge-style date navigation + calendar, typed header with live/offline cursor). Cut `v0.1.3_CHECKPOINT.md` (covering v0.1.1–v0.1.3) when the owner ends the session.
 - **Version scheme:** major = Phase, minor = each checkpoint cut within that phase (minors don't need to match milestone numbers). A new Phase bumps the major number and resets to `.0`.
   - **Phase 0 exception (owner's decision, 2026-09-29):** while Atomic is in initiation (deciding how everything looks, is categorized and works), updates are numbered with a third digit, `v0.1.x` (v0.1.1, v0.1.2, …). Keep using `v0.1.x` until the owner says initiation is finished. Checkpoint files for these use the same number (e.g. `v0.1.2_CHECKPOINT.md`).
 - **When to cut:** on each major milestone or completed feature. Never overwrite a shipped checkpoint. Cut the next one and update the pointer above.
@@ -84,8 +84,8 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - **Local storage: IndexedDB** plus a **sync outbox** (changes queue locally and are sent when online). It is bigger and sturdier than Forge's `localStorage`, and the outbox is ready for Phase 2.
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
-### Frontend file map (v0.1.2 build)
-- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today`, `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help).
+### Frontend file map (v0.1.3 build)
+- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today` = day screen, `calendar`, `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help).
 - Internal names differ from what the app shows (kept so stored data never needs migrating): `atoms` store = items, `elements` store = categories, `isotopes` store = subcategories. **Never show atom/molecule/element/isotope words in the UI.**
 - `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release.
 - Tests: `node test/model.test.mjs` (logic). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
@@ -132,6 +132,10 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
   - `#timeblock work 5 pm - 11pm`, where several blocks can be separated by commas; any clear time range like `movie 5pm-8pm` also becomes a block, and `work 9am-5pm weekdays` repeats
   - `#list groceries: eggs, soap, juice`, where each item gets a checkbox, the list is crossed out automatically when every item is checked, and adding to an open list with the same name appends items
 - Time blocks have no checkbox. They show NOW while running and dim once past.
+- **Dates work like Forge's:** one current date (`S.ui.date`, like Forge's `STATE.currentDate`) drives the day screen. It has ◀ ▶ arrows, a tappable date that opens a month picker, and BACK TO TODAY whenever you're off today. The CALENDAR tab is a month grid: tap a day to open it. Its markers: amber = something planned (dated task, time block, specific-day habit), dim green = partly done, bright green = everything done.
+  - Visibility rules (`model.showsOn`): **today** shows open, overdue and undated tasks plus anything finished today. **Past days** show tasks due or finished that day, with habit check-offs editable (backfill). **Future days** show tasks due that day and scheduled habits (read-only). Habits never appear on days before they were created.
+  - Adding from the typing bar while viewing another day puts undated tasks and time blocks on that day.
+- **Header:** "ATOMIC" types itself out on load, followed by a blinking block cursor in the theme color while online. Offline, the cursor becomes a blinking ⚠ in the warning color.
 
 ## Live Deployment
 - **Repo:** `github.com/peterkeremwest/Atomic---Habit-Tracker`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").

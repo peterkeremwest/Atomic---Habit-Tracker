@@ -153,13 +153,52 @@ export function periodDoneCount(a, logsByDate, k, { includeSkips = false } = {})
 export const isQuota = a => a.kind === 'habit' && (a.repeat?.type === 'perWeek' || a.repeat?.type === 'perMonth');
 export const quotaMet = (a, logs, k) => isQuota(a) && periodDoneCount(a, logs, k, { includeSkips: true }) >= a.repeat.count;
 
-// Should this item appear on the day screen for k?
-export function showsOn(a, logsByDate, k) {
+// Should this item appear on the day screen for k? (today = the real current day)
+//   today:  open tasks that are due/overdue/undated, plus anything finished today
+//   past:   tasks due or finished that day, lists finished that day
+//   future: tasks due that day
+export function showsOn(a, logsByDate, k, today = todayKey()) {
   if (a.deletedAt) return false;
-  if (a.kind === 'task') return a.completedOn ? a.completedOn === k : (!a.dueDate || a.dueDate <= k);
-  if (a.kind === 'list') return a.completedOn ? a.completedOn === k : true;
-  if (a.kind === 'block') return isScheduled(a, k);
+  if (a.kind === 'task') {
+    if (k === today) return a.completedOn ? a.completedOn === k : (!a.dueDate || a.dueDate <= k);
+    if (k < today) return a.completedOn === k || (a.dueDate === k && (!a.completedOn || a.completedOn >= k));
+    return a.dueDate === k;
+  }
+  if (a.kind === 'list') {
+    if (k === today) return a.completedOn ? a.completedOn === k : true;
+    return k < today && a.completedOn === k;
+  }
+  if (a.kind === 'habit') {
+    const created = a.createdAt ? toKey(new Date(a.createdAt)) : '0000';
+    const firstLog = [...logsByDate.keys()].sort()[0];
+    const start = firstLog && firstLog < created ? firstLog : created;
+    if (k < start) return false; // don't show habits on days before they existed
+  }
   return isScheduled(a, k);
+}
+
+// Day summary for the calendar: planned = dated tasks / time blocks / specific-day habits;
+// due/done count habits + tasks (not blocks, not already-met quotas).
+export function daySummary(atoms, logsFor, k, today = todayKey()) {
+  let planned = false, due = 0, done = 0;
+  for (const a of atoms) {
+    const logs = logsFor(a.id);
+    if (!showsOn(a, logs, k, today)) continue;
+    if (a.kind === 'block' || (a.kind === 'task' && a.dueDate === k) ||
+        (a.kind === 'habit' && ['days', 'monthDay'].includes(a.repeat?.type))) planned = true;
+    if (!countsToday(a, logs, k)) continue;
+    due++;
+    if (statusFor(a, logs, k) === 'done') done++;
+  }
+  return { planned, due, done };
+}
+
+export function relativeDay(k, today = todayKey()) {
+  const diff = Math.round((fromKey(k) - fromKey(today)) / 86400000);
+  if (diff === 0) return 'today';
+  if (diff === -1) return 'yesterday';
+  if (diff === 1) return 'tomorrow';
+  return diff > 0 ? `in ${diff} days` : `${-diff} days ago`;
 }
 
 // 'done' | 'partial' | 'skipped' | 'met' (weekly/monthly quota already reached) | null
@@ -326,7 +365,7 @@ function parseDayWords(words, today) {
   return { days, date, repeat, rest };
 }
 
-export function parseQuickAdd(text, elements = [], isotopes = [], today = todayKey()) {
+export function parseQuickAdd(text, elements = [], isotopes = [], today = todayKey(), defaultDate = today) {
   const { rest: noTags, tags, special } = takeTags(String(text));
   const cat = resolveTags(tags, elements, isotopes);
   const base = { ...cat, energy: null };
@@ -353,7 +392,7 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
       .filter(w => !/^(from|at)$/i.test(w));
     const dw = parseDayWords(words, today);
     blocks.push({ ...base, kind: 'block', title: clean(dw.rest.join(' ')) || 'Time block', start: r.start, end: r.end,
-      repeat: dw.repeat, date: dw.repeat ? null : (dw.date || today) });
+      repeat: dw.repeat, date: dw.repeat ? null : (dw.date || defaultDate) });
   }
   if (blocks.length) return blocks;
 
@@ -393,7 +432,7 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   else if (dw.repeat) out.repeat = dw.repeat;
   else if (weekly) out.repeat = { type: 'perWeek', count: 1 };
   if (!out.repeat && out.target.kind === 'count') out.repeat = { type: 'daily' };
-  if (out.repeat) out.kind = 'habit'; else out.dueDate = dw.date;
+  if (out.repeat) out.kind = 'habit'; else out.dueDate = dw.date || (defaultDate !== today ? defaultDate : null);
   out.title = clean(dw.rest.join(' '));
   return [out];
 }

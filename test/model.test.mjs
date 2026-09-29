@@ -74,11 +74,22 @@ const pm = mk({ kind: 'habit', title: 'pm', repeat: { type: 'perMonth', count: 1
 assert.equal(M.streak(pm, new Map([['2026-09-03', { status: 'done' }], ['2026-08-20', { status: 'done' }]]), T).value, 2);
 
 // visibility: done items stay on today
-const t = mk({ kind: 'task', title: 'a', dueDate: '2026-10-05' }); assert.equal(M.showsOn(t, new Map(), T), false);
-t.dueDate = '2026-09-20'; assert.equal(M.showsOn(t, new Map(), T), true);
-t.completedOn = T; assert.equal(M.showsOn(t, new Map(), T), true); assert.equal(M.showsOn(t, new Map(), '2026-09-30'), false);
+const t = mk({ kind: 'task', title: 'a', dueDate: '2026-10-05' }); assert.equal(M.showsOn(t, new Map(), T, T), false);
+assert.equal(M.showsOn(t, new Map(), '2026-10-05', T), true); // future day shows it
+t.dueDate = '2026-09-20'; assert.equal(M.showsOn(t, new Map(), T, T), true);
+assert.equal(M.showsOn(t, new Map(), '2026-09-20', T), true);   // past due day
+assert.equal(M.showsOn(t, new Map(), '2026-09-22', T), false);  // other past day
+t.completedOn = T; assert.equal(M.showsOn(t, new Map(), T, T), true); assert.equal(M.showsOn(t, new Map(), '2026-09-30', '2026-09-30'), false);
+const hh = mk({ kind: 'habit', title: 'h', repeat: { type: 'daily' } });
+assert.equal(M.showsOn(hh, new Map(), '2026-08-01', T), false); // before it existed
+assert.equal(M.showsOn(hh, new Map(), '2026-10-10', T), true);
+const sum = M.daySummary([hh, t], id => new Map(), T, T); assert.deepEqual(sum, { planned: false, due: 2, done: 1 });
+assert.equal(M.relativeDay('2026-09-28', T), 'yesterday'); assert.equal(M.relativeDay('2026-10-02', T), 'in 3 days');
+let pd = M.parseQuickAdd('dentist', elements, isotopes, T, '2026-10-02')[0]; assert.equal(pd.dueDate, '2026-10-02');
+pd = M.parseQuickAdd('movie 5pm-8pm', elements, isotopes, T, '2026-10-02')[0]; assert.equal(pd.date, '2026-10-02');
+pd = M.parseQuickAdd('dentist', elements, isotopes, T, T)[0]; assert.equal(pd.dueDate, null);
 const b = mk({ kind: 'block', title: 'w', start: '09:00', end: '17:00', repeat: { type: 'days', days: [1, 2] } });
-assert.equal(M.showsOn(b, new Map(), T), true); assert.equal(M.showsOn(b, new Map(), '2026-10-01'), false);
+assert.equal(M.showsOn(b, new Map(), T, T), true); assert.equal(M.showsOn(b, new Map(), '2026-10-01', T), false);
 
 assert.equal(M.statusFromCount(3, 8), 'partial'); assert.equal(M.statusFromCount(8, 8), 'done');
 const a1 = { id: '1', updatedAt: '2026-01-02' }, b1 = { id: '1', updatedAt: '2026-01-03' };

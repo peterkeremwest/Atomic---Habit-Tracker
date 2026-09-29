@@ -168,7 +168,8 @@ export function openEditor(atomId = null, preset = {}) {
 export function openMenu(atomId) {
   const a = S.atoms.find(x => x.id === atomId);
   if (!a) return;
-  const k = M.todayKey();
+  const k = S.ui.date;
+  const future = k > M.todayKey();
   const s = M.statusFor(a, A.logsFor(a.id), k);
   const items = [];
   if (a.kind === 'task') {
@@ -177,6 +178,8 @@ export function openMenu(atomId) {
   } else if (a.kind === 'list') {
     items.push(['toggle', a.completedOn ? 'Uncheck everything' : 'Check everything']);
     if (a.items.some(i => i.done)) items.push(['cleardone', 'Remove checked items']);
+  } else if (a.kind === 'habit' && future) {
+    // future days: nothing to check off yet
   } else if (a.kind === 'habit' && a.target?.kind === 'count') {
     items.push(['plus', 'Add one'], ['minus', 'Remove one'], ['skip', 'Skip today (keeps your streak)'], ['clear', 'Reset today']);
   } else if (a.kind === 'habit') {
@@ -186,7 +189,8 @@ export function openMenu(atomId) {
     if (s && s !== 'met') items.push(['clear', 'Clear today']);
   }
   items.push(['edit', 'Edit'], ['delete', 'Delete']);
-  openSheet(`<h2>${esc(a.title)}</h2><div class="menu">${items.map(([x, l]) =>
+  const when = k === M.todayKey() ? '' : `<p class="dim" style="margin:-6px 0 8px;font-size:13px">for ${M.prettyDate(k)}</p>`;
+  openSheet(`<h2>${esc(a.title)}</h2>${when}<div class="menu">${items.map(([x, l]) =>
     `<button data-x="${x}" class="${x === 'delete' ? 'warn' : ''}">${esc(l)}</button>`).join('')}</div>`, root => {
     root.querySelector('.menu').addEventListener('click', async e => {
       const x = e.target.closest('button')?.dataset.x;

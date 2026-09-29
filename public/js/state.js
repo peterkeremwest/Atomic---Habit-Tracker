@@ -7,7 +7,7 @@ import * as M from './model.js';
 export const S = {
   elements: [], isotopes: [], atoms: [], logs: [],
   settings: { theme: 'green', scanlines: true },
-  ui: { route: 'today', filterEl: null, lowOnly: false, showDone: false, openEl: null },
+  ui: { route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
   pending: 0,
 };
 
@@ -90,6 +90,7 @@ export async function toggle(atomId, date = M.todayKey()) {
   if (a.kind === 'block') return;
   if (a.kind === 'task') {
     const doneNow = !a.completedOn;
+    if (date > M.todayKey()) date = M.todayKey(); // finishing a future task early counts as done today
     await updateAtom(atomId, { completedOn: doneNow ? date : null });
     return setLog(atomId, a.completedOn || date, { status: doneNow ? 'done' : null });
   }

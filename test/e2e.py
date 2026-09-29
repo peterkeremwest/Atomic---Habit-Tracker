@@ -79,12 +79,39 @@ async def main():
         await pg.screenshot(path=OUT + '6-categories.png', full_page=True)
         await pg.click('nav a[data-route=sys]'); await pg.wait_for_selector('.sys')
         await pg.screenshot(path=OUT + '7-settings.png', full_page=True)
+        # ----- dates -----
+        await pg.goto(URL + '#/today'); await pg.wait_for_selector('.daynav')
+        today_label = await pg.locator('.daynav .dlabel').inner_text()
+        await pg.click('[data-action=datenext]'); await pg.wait_for_timeout(100)
+        assert await pg.locator('.backtoday').count() == 1
+        print(await add(pg, 'dentist appointment'))
+        assert await pg.locator('.row', has_text='dentist').count() == 1, 'task added to tomorrow'
+        await pg.click('.backtoday'); await pg.wait_for_timeout(100)
+        assert await pg.locator('.row', has_text='dentist').count() == 0, 'dentist only on tomorrow'
+        assert await pg.locator('.daynav .dlabel').inner_text() == today_label
+        await pg.click('[data-action=dateprev]'); await pg.wait_for_timeout(100)
+        assert await pg.locator('.row', has_text='read 20').count() == 0, 'habits made today are not shown on earlier days'
+        await pg.screenshot(path=OUT + '8-yesterday.png')
+        await pg.click('[data-action=datepick]'); await pg.wait_for_selector('dialog[open] .cal')
+        await pg.screenshot(path=OUT + '9-picker.png')
+        await pg.click('dialog[open] [data-action=gotoday]'); await pg.wait_for_timeout(100)
+        assert await pg.locator('.backtoday').count() == 0
+        await pg.click('nav a[data-route=calendar]'); await pg.wait_for_selector('.calgrid.days')
+        await pg.screenshot(path=OUT + '10-calendar.png', full_page=True)
+        await pg.locator('.calgrid.days button.today').click(); await pg.wait_for_selector('.daynav')
+        assert 'today' in await pg.locator('.daynav .dlabel').inner_text()
+        # header cursor
+        assert await pg.locator('header .cursor.offline').count() == 0
+        typed = await pg.locator('header .typed').inner_text(); print('typed', typed)
         # persistence + offline
         await pg.reload(); await pg.wait_for_timeout(600)
         await pg.goto(URL + '#/today'); await pg.wait_for_selector('.row')
         await ctx.set_offline(True)
         await pg.reload(); await pg.wait_for_selector('.row', timeout=5000)
         print('offline rows', await pg.locator('.row').count())
+        await pg.wait_for_timeout(300)
+        print('offline cursor', await pg.locator('header .cursor').inner_text(), await pg.locator('header .cursor.offline').count())
+        await pg.screenshot(path=OUT + '11-offline.png', clip={'x': 0, 'y': 0, 'width': 390, 'height': 200})
         await ctx.set_offline(False)
         print('ERRORS', errs)
         await b.close()
