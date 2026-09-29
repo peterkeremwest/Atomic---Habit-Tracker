@@ -105,3 +105,23 @@ console.log('model tests passed');
   x = q('floss #habit'); assert.equal(x.kind, 'habit');
   console.log('keyword tag tests passed');
 }
+{
+  const q = t => M.parseQuickAdd(t, elements, isotopes, T)[0];
+  let x = q('move out: pack, clean, return keys #home');
+  assert.equal(x.kind, 'task'); assert.equal(x.title, 'move out'); assert.deepEqual(x.items, ['pack', 'clean', 'return keys']); assert.equal(x.elementId, home.id);
+  const made = M.makeAtom(x); assert.equal(made.items.length, 3); assert.equal(made.items[0].done, false);
+  x = q('lunch 11:30-1pm'); assert.equal(x.kind, 'block'); // colon in a time is not steps
+  x = q('study 25 min timer #career'); assert.deepEqual(x.target, { kind: 'timer', minutes: 25 }); assert.equal(x.kind, 'habit'); assert.equal(x.title, 'study');
+  x = q('deep work 1h timer weekdays'); assert.deepEqual(x.target, { kind: 'timer', minutes: 60 }); assert.equal(x.repeat.type, 'days'); assert.equal(x.title, 'deep work');
+  x = q('read 20 min daily'); assert.equal(x.target.kind, 'check'); assert.equal(x.title, 'read 20 min');
+  const b1 = { id: 'a', title: 'work', start: '17:00', end: '23:00' }, b2 = { id: 'b', title: 'movie', start: '20:00', end: '22:00' }, b3 = { id: 'c', title: 'late', start: '23:00', end: '01:00' };
+  const c = M.clashes([b1, b2, b3]); assert.deepEqual(c.get('a'), ['movie']); assert.equal(c.has('c'), false);
+  const h = M.makeAtom({ kind: 'habit', title: 'h', repeat: { type: 'daily' } }); h.createdAt = '2026-09-01T00:00:00Z';
+  const tk = M.makeAtom({ kind: 'task', title: 't', dueDate: '2026-09-28' }); tk.createdAt = '2026-09-01T00:00:00Z';
+  const logs = new Map([[h.id, new Map([['2026-09-28', { status: 'done' }], ['2026-09-29', { status: 'done' }]])]]);
+  const r = M.weekReview([h, tk], id => logs.get(id) || new Map(), '2026-09-28', T);
+  assert.equal(r.days.length, 7); assert.equal(r.days[2].future, true);
+  assert.equal(r.habits[0].done, 2); assert.equal(r.habits[0].planned, 2);
+  assert.equal(r.slipped.length, 1); assert.equal(r.total, 4); assert.equal(r.done, 2);
+  console.log('v0.1.5 model tests passed');
+}

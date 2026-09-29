@@ -1,4 +1,5 @@
 # Browser test on a phone-sized screen. Run from repo root with a server on :8765 serving public/.
+import re
 import asyncio, os
 from playwright.async_api import async_playwright
 URL = 'http://localhost:8765/'
@@ -56,7 +57,7 @@ async def main():
         await pg.click('.quick [data-x=help]'); await pg.wait_for_selector('dialog[open] .help')
         await pg.screenshot(path=OUT + '3-help.png'); await pg.click('dialog [data-x=ok]')
         # editor on a time block
-        await pg.locator('.row.block', has_text='work').locator('.title').click(); await pg.wait_for_selector('dialog[open] #atomForm')
+        await pg.locator('.row.block .title', has_text=re.compile('^work$')).click(); await pg.wait_for_selector('dialog[open] #atomForm')
         assert await pg.locator('#f-start').input_value() == '17:00'
         await pg.screenshot(path=OUT + '4-editor-block.png')
         await pg.click('dialog [data-x=cancel]')
@@ -90,6 +91,58 @@ async def main():
         assert await pg.locator('section.folded').count() == 0
         print(await add(pg, 'do dishes #onetime'))
         assert await pg.locator('section[data-sec="today:once"] .row', has_text='do dishes').count() == 1
+        # ----- v0.1.5: undo, focus, leftovers, steps, timer, drag, search, review -----
+        await pg.goto(URL + '#/today'); await pg.wait_for_selector('.sec')
+        print(await add(pg, 'move out: pack, clean, return keys #home'))
+        mrow = pg.locator('.row', has_text='move out')
+        assert await mrow.locator('.steps li').count() == 3
+        for i in range(3): await mrow.locator('.steps .chk').nth(i).click(); await pg.wait_for_timeout(120)
+        assert await pg.locator('.row.done', has_text='move out').count() == 1, 'all steps -> task done'
+        await pg.click('#toast .undo'); await pg.wait_for_timeout(200)
+        assert await pg.locator('.row.done', has_text='move out').count() == 0, 'undo last step'
+        # delete + undo
+        await pg.locator('.row', has_text='do dishes').locator('.more').click()
+        await pg.locator('dialog .menu button', has_text='Delete').click(); await pg.wait_for_timeout(150)
+        assert await pg.locator('.row', has_text='do dishes').count() == 0
+        await pg.click('#toast .undo'); await pg.wait_for_timeout(250)
+        assert await pg.locator('.row', has_text='do dishes').count() == 1, 'undo delete'
+        # focus pin
+        await pg.locator('.row', has_text='meditate').locator('.more').click()
+        await pg.locator('dialog .menu button', has_text='Pin to focus').click(); await pg.wait_for_timeout(150)
+        assert await pg.locator('section[data-sec="today:focus"] .row', has_text='meditate').count() == 1
+        # leftovers
+        n0 = await pg.locator('section[data-sec="today:once"] .row').count()
+        await pg.click('[data-action=moveleft]'); await pg.wait_for_timeout(200)
+        print('one-time before/after move', n0, await pg.locator('section[data-sec="today:once"] .row').count())
+        await pg.click('#toast .undo'); await pg.wait_for_timeout(300)
+        assert await pg.locator('section[data-sec="today:once"] .row').count() == n0, 'undo move'
+        # timer
+        print(await add(pg, 'study 25 min timer #career'))
+        trow = pg.locator('.row', has_text='study').filter(has=pg.locator('.chk.timer'))
+        await trow.locator('.chk').click(); await pg.wait_for_timeout(100); print('toast', await pg.locator('#toast').inner_text()); await pg.wait_for_timeout(1300)
+        await pg.wait_for_timeout(1200)
+        t1 = await trow.locator('.chk').inner_text(); print('timer', t1); assert '24:5' in t1
+        await pg.evaluate("import('./js/state.js').then(A => { for (const t of Object.values(A.S.timers)) t.endsAt = Date.now() - 1; })")
+        await pg.wait_for_timeout(1500)
+        assert await pg.locator('.row.done', has_text='study').count() >= 1, 'timer finished -> done'
+        # drag: move last daily row to top
+        sec = pg.locator('section[data-sec="today:daily"] .secinner')
+        before = await sec.locator(':scope > .row .title').all_inner_texts()
+        h = sec.locator(':scope > .row .drag').last; hb = await h.bounding_box()
+        fb = await sec.locator(':scope > .row').first.bounding_box()
+        await pg.mouse.move(hb['x'] + 5, hb['y'] + 5); await pg.mouse.down()
+        for y in range(int(hb['y']), int(fb['y']) - 20, -8): await pg.mouse.move(hb['x'] + 5, y)
+        await pg.mouse.up(); await pg.wait_for_timeout(300)
+        after = await sec.locator(':scope > .row .title').all_inner_texts()
+        print('drag', before, '->', after); assert after[0] == before[-1]
+        await pg.screenshot(path=OUT + '13-v015.png', full_page=True)
+        # search
+        await pg.click('header .hsearch'); await pg.fill('#q-search', 'keys'); await pg.wait_for_timeout(100)
+        assert await pg.locator('.hit').count() == 1
+        await pg.screenshot(path=OUT + '14-search.png'); await pg.locator('.hit').click(); await pg.wait_for_timeout(100)
+        # review
+        await pg.click('nav a[data-route=calendar]'); await pg.click('[data-action=review]'); await pg.wait_for_selector('.review')
+        await pg.screenshot(path=OUT + '15-review.png', full_page=True)
         # ----- dates -----
         await pg.goto(URL + '#/today'); await pg.wait_for_selector('.daynav')
         today_label = await pg.locator('.daynav .dlabel').inner_text()

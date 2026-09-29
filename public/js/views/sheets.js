@@ -51,7 +51,11 @@ export function openEditor(atomId = null, preset = {}) {
       <div data-show-r="monthDay" style="margin-top:8px"><select class="field" name="monthDay" aria-label="Day of the month" style="max-width:200px">
         ${Array.from({ length: 31 }, (_, i) => i + 1).map(n => `<option value="${n}" ${r.type === 'monthDay' && r.day === n ? 'selected' : ''}>on the ${M.ordinal(n)}</option>`).join('')}</select></div>
       <label>MARK DONE WITH</label>
-      <div class="seg">${radio('tkind', 'check', 'A CHECKMARK', v.target?.kind !== 'count')}${radio('tkind', 'count', 'A COUNTER', v.target?.kind === 'count')}</div>
+      <div class="seg">${radio('tkind', 'check', 'A CHECKMARK', !['count', 'timer'].includes(v.target?.kind))}${radio('tkind', 'count', 'A COUNTER', v.target?.kind === 'count')}${radio('tkind', 'timer', 'A TIMER', v.target?.kind === 'timer')}</div>
+      <div data-show-t="timer" style="margin-top:8px">
+        <label for="f-min" style="margin-top:0">MINUTES</label>
+        <input class="field" type="number" id="f-min" name="minutes" min="1" max="600" value="${v.target?.minutes || 25}" style="max-width:120px">
+      </div>
       <div data-show-t="count" style="margin-top:8px">
         <label for="f-goal" style="margin-top:0">GOAL PER DAY</label>
         <input class="field" type="number" id="f-goal" name="goal" min="2" max="99" value="${v.target?.goal || 8}" style="max-width:120px">
@@ -74,8 +78,8 @@ export function openEditor(atomId = null, preset = {}) {
       <div class="seg" data-show-b="days" style="margin-top:8px">${dayBoxes('bdays', bDays)}</div>
     </div>
 
-    <div data-show="list">
-      <label for="f-items">ITEMS (one per line)</label>
+    <div data-show="list task">
+      <label for="f-items"><span data-lbl="list">ITEMS</span><span data-lbl="task">STEPS (optional)</span> — one per line</label>
       <textarea class="field" id="f-items" name="items" rows="5" maxlength="2000">${esc(itemsText)}</textarea>
     </div>
 
@@ -95,7 +99,8 @@ export function openEditor(atomId = null, preset = {}) {
     const f = root.querySelector('#atomForm');
     const sync = () => {
       const kind = f.kind.value;
-      root.querySelectorAll('[data-show]').forEach(n => n.classList.toggle('hidden', n.dataset.show !== kind));
+      root.querySelectorAll('[data-show]').forEach(n => n.classList.toggle('hidden', !n.dataset.show.split(' ').includes(kind)));
+      root.querySelectorAll('[data-lbl]').forEach(n => n.classList.toggle('hidden', n.dataset.lbl !== kind));
       root.querySelectorAll('[data-show-not]').forEach(n => n.classList.toggle('hidden', n.dataset.showNot.split(' ').includes(kind)));
       root.querySelectorAll('[data-show-r]').forEach(n => n.classList.toggle('hidden', n.dataset.showR !== f.rtype.value));
       root.querySelectorAll('[data-show-t]').forEach(n => n.classList.toggle('hidden', n.dataset.showT !== f.tkind.value));
@@ -110,8 +115,7 @@ export function openEditor(atomId = null, preset = {}) {
     if (!a) setTimeout(() => f.title.focus(), 50);
     root.querySelector('[data-x="cancel"]').onclick = closeSheet;
     root.querySelector('[data-x="delete"]')?.addEventListener('click', async () => {
-      if (!confirm(`Delete "${a.title}"?`)) return;
-      await A.deleteAtom(a.id); closeSheet(); toast('deleted');
+      await A.undoable('delete', () => A.deleteAtom(a.id)); closeSheet(); toast('deleted', { undo: true });
     });
     f.addEventListener('submit', async e => {
       e.preventDefault();
@@ -135,6 +139,7 @@ export function openEditor(atomId = null, preset = {}) {
         else if (rt === 'monthDay') data.repeat = { type: 'monthDay', day: +f.monthDay.value };
         else data.repeat = { type: 'daily' };
         if (f.tkind.value === 'count') data.target = { kind: 'count', goal: Math.min(99, Math.max(2, +f.goal.value || 2)) };
+        if (f.tkind.value === 'timer') data.target = { kind: 'timer', minutes: Math.min(600, Math.max(1, +f.minutes.value || 25)) };
       }
       if (kind === 'task') data.dueDate = f.dueDate.value || null;
       if (kind === 'block') {
@@ -149,18 +154,21 @@ export function openEditor(atomId = null, preset = {}) {
           data.repeat = ds.length === 7 ? { type: 'daily' } : { type: 'days', days: ds };
         }
       }
-      if (kind === 'list') {
+      if (kind === 'list' || kind === 'task') {
         const lines = f.items.value.split('\n').map(s => s.trim()).filter(Boolean);
         const old = (a?.items || []);
         data.items = lines.map(text => old.find(i => i.text === text) || { id: M.uid('li'), text, done: false });
         const all = data.items.length && data.items.every(i => i.done);
-        data.completedOn = all ? (a?.completedOn || M.todayKey()) : null;
+        if (kind === 'list') data.completedOn = all ? (a?.completedOn || M.todayKey()) : null;
+        else if (data.items.length && all && !a?.completedOn) data.completedOn = M.todayKey();
       }
-      if (a) {
-        if (a.kind !== kind) { data.completedOn = null; }
-        await A.updateAtom(a.id, data);
-      } else await A.addAtom(data);
-      closeSheet(); toast(a ? 'saved' : 'added');
+      await A.undoable('edit', async () => {
+        if (a) {
+          if (a.kind !== kind) { data.completedOn = null; }
+          await A.updateAtom(a.id, data);
+        } else await A.addAtom(data);
+      });
+      closeSheet(); toast(a ? 'saved' : 'added', { undo: true });
     });
   });
 }
@@ -183,12 +191,14 @@ export function openMenu(atomId) {
   } else if (a.kind === 'habit' && a.target?.kind === 'count') {
     items.push(['plus', 'Add one'], ['minus', 'Remove one'], ['skip', 'Skip today (keeps your streak)'], ['clear', 'Reset today']);
   } else if (a.kind === 'habit') {
+    if (a.target?.kind === 'timer' && A.timerLeft(a.id) !== null) items.push(['treset', 'Reset timer']);
     if (s !== 'done') items.push(['done', 'Mark done']);
     if (s !== 'partial') items.push(['partial', 'Partly done']);
     if (s !== 'skipped') items.push(['skip', 'Skip today (keeps your streak)']);
     if (s && s !== 'met') items.push(['clear', 'Clear today']);
   }
-  items.push(['edit', 'Edit'], ['delete', 'Delete']);
+  if (a.kind !== 'block') items.push(['focus', a.focusOn === k ? 'Unpin from focus' : `Pin to focus${k === M.todayKey() ? '' : ' for this day'} (${A.focusCount(k)} of 3)`]);
+  items.push(['edit', a.kind === 'task' && !a.items?.length ? 'Edit / add steps' : 'Edit'], ['delete', 'Delete']);
   const when = k === M.todayKey() ? '' : `<p class="dim" style="margin:-6px 0 8px;font-size:13px">for ${M.prettyDate(k)}</p>`;
   openSheet(`<h2>${esc(a.title)}</h2>${when}<div class="menu">${items.map(([x, l]) =>
     `<button data-x="${x}" class="${x === 'delete' ? 'warn' : ''}">${esc(l)}</button>`).join('')}</div>`, root => {
@@ -196,17 +206,25 @@ export function openMenu(atomId) {
       const x = e.target.closest('button')?.dataset.x;
       if (!x) return;
       if (x === 'edit') return openEditor(a.id);
-      if (x === 'delete') { if (!confirm(`Delete "${a.title}"?`)) return; await A.deleteAtom(a.id); closeSheet(); return toast('deleted'); }
       closeSheet();
-      if (x === 'toggle') await A.toggle(a.id, k);
-      if (x === 'done') await A.setStatus(a.id, k, 'done');
-      if (x === 'snooze') { await A.snooze(a.id); toast('moved to tomorrow'); }
-      if (x === 'partial') await A.setStatus(a.id, k, 'partial');
-      if (x === 'skip') { await A.setStatus(a.id, k, 'skipped'); toast('skipped, streak is safe'); }
-      if (x === 'clear') await A.setStatus(a.id, k, null);
-      if (x === 'plus') await A.bump(a.id, k, +1);
-      if (x === 'minus') await A.bump(a.id, k, -1);
-      if (x === 'cleardone') await A.updateAtom(a.id, { items: a.items.filter(i => !i.done), completedOn: null });
+      if (x === 'treset') return A.timerReset(a.id);
+      if (x === 'focus') {
+        const r = await A.undoable('focus', () => A.toggleFocus(a.id, k));
+        return toast(r === 'full' ? 'focus already has 3 items, unpin one first' : r === 'pinned' ? 'pinned to focus' : 'unpinned', r === 'full' ? {} : { undo: true });
+      }
+      const msg = await A.undoable(x, async () => {
+        if (x === 'delete') { await A.deleteAtom(a.id); return 'deleted'; }
+        if (x === 'toggle') { await A.toggle(a.id, k); return 'updated'; }
+        if (x === 'done') { await A.setStatus(a.id, k, 'done'); return 'marked done'; }
+        if (x === 'snooze') { await A.snooze(a.id); return 'moved to tomorrow'; }
+        if (x === 'partial') { await A.setStatus(a.id, k, 'partial'); return 'marked partly done'; }
+        if (x === 'skip') { await A.setStatus(a.id, k, 'skipped'); return 'skipped, streak is safe'; }
+        if (x === 'clear') { await A.setStatus(a.id, k, null); return 'cleared'; }
+        if (x === 'plus') { await A.bump(a.id, k, +1); return 'added one'; }
+        if (x === 'minus') { await A.bump(a.id, k, -1); return 'removed one'; }
+        if (x === 'cleardone') { await A.updateAtom(a.id, { items: a.items.filter(i => !i.done), completedOn: null }); return 'checked items removed'; }
+      });
+      if (msg) toast(msg, { undo: true });
     });
   });
 }
@@ -257,4 +275,38 @@ export function openHelp() {
       <p class="dim">adding to a list that's still open adds the new items to it.</p>
       <div class="actions"><button class="btn solid vt" data-x="ok">GOT IT</button></div>
     </div>`, root => { root.querySelector('[data-x="ok"]').onclick = closeSheet; });
+}
+
+// SEARCH — every item, any day. Tap a result to open its day (or edit it).
+export function openSearch(onPick) {
+  openSheet(`<h2>SEARCH</h2>
+    <input class="field" id="q-search" type="search" placeholder="search titles, steps, list items, notes…" aria-label="Search" autocomplete="off">
+    <div id="q-results" class="results" role="list"></div>`, root => {
+    const input = root.querySelector('#q-search'), out = root.querySelector('#q-results');
+    const kindName = { task: 'one-time', habit: 'habit', block: 'time block', list: 'list' };
+    const run = () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q) { out.innerHTML = '<p class="dim" style="font-size:13px">start typing.</p>'; return; }
+      const hits = live(S.atoms).filter(a => [a.title, a.note, ...(a.items || []).map(i => i.text)].some(t => (t || '').toLowerCase().includes(q))).slice(0, 40);
+      out.innerHTML = hits.length ? hits.map(a => {
+        const el = A.elementById(a.elementId);
+        const when = a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
+          : a.kind === 'block' ? (a.date ? `${M.shortDate(a.date)} ${M.fmtTime(a.start)}` : `${M.describeRepeat(a)} ${M.fmtTime(a.start)}`)
+          : a.kind === 'habit' ? M.describeRepeat(a) : a.completedOn ? `finished ${M.shortDate(a.completedOn)}` : 'open';
+        return `<button class="hit" data-id="${a.id}" role="listitem"><span>${esc(a.title)}</span>
+          <small>${kindName[a.kind]}${el && !el.deletedAt ? ' · ' + esc(M.tagOf(el.name)) : ''} · ${esc(when)}</small></button>`;
+      }).join('') : '<p class="dim">no matches.</p>';
+    };
+    input.addEventListener('input', run);
+    out.addEventListener('click', e => {
+      const b = e.target.closest('.hit'); if (!b) return;
+      const a = S.atoms.find(x => x.id === b.dataset.id);
+      closeSheet();
+      const today = M.todayKey();
+      const date = a.kind === 'task' ? (a.completedOn || (a.dueDate && a.dueDate > today ? a.dueDate : today))
+        : a.kind === 'block' ? a.date : a.kind === 'list' ? (a.completedOn || today) : null;
+      onPick(a, date);
+    });
+    run(); setTimeout(() => input.focus(), 50);
+  });
 }

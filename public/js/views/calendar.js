@@ -41,5 +41,6 @@ export function monthGrid(ym) {
 }
 
 export function render() {
-  return monthGrid(S.ui.calMonth) + `<p class="dim" style="font-size:13px;text-align:center">tap a day to see or plan it.</p>`;
+  return monthGrid(S.ui.calMonth) + `<p class="dim" style="font-size:13px;text-align:center">tap a day to see or plan it.</p>
+    <button class="btn vt backtoday" data-action="review" style="margin-top:14px">WEEKLY REVIEW ▶</button>`;
 }

@@ -256,3 +256,36 @@ button.section:active { color: var(--fg); }
 .sec.folded .secbody { grid-template-rows: 0fr; opacity: 0; }
 .secinner { overflow: hidden; min-height: 0; }
 #toast { bottom: calc(80px + env(safe-area-inset-bottom)); }
+
+/* ---------- v0.1.5: undo, focus, drag, steps, timers, search, review ---------- */
+header.top { align-items: center; }
+.hsearch { margin-left: auto; color: var(--muted); font-size: 20px; border: 1px solid var(--line); padding: 2px 10px; }
+.hsearch:active { color: var(--fg); border-color: var(--fg); }
+#toast { display: flex; align-items: center; gap: 14px; }
+#toast.hasaction { pointer-events: auto; }
+#toast .undo { color: var(--bg); background: var(--fg); padding: 1px 10px; font-size: 18px; }
+.pin { color: var(--warn); }
+.section small { font-size: 14px; }
+.drag { color: var(--faint); font-size: 22px; padding: 4px 6px; cursor: grab; touch-action: none; user-select: none; align-self: center; }
+.drag:active { color: var(--fg); cursor: grabbing; }
+.dragging { position: relative; z-index: 5; background: var(--panel); box-shadow: 0 0 0 1px var(--fg), 0 6px 18px rgba(0,0,0,.6); }
+.items.steps { padding-left: 0; margin-top: 6px; }
+.items.steps .chk.small { font-size: 18px; min-width: 32px; min-height: 26px; }
+.items.steps li { padding: 1px 0; font-size: 14px; }
+.chk.timer .mark { font-size: 20px; }
+.chk.timer.running { animation: pulse 1s steps(2) infinite; }
+@keyframes pulse { 50% { opacity: .55; } }
+.moveleft { display: block; width: 100%; margin: 10px 0 4px; font-size: 17px; border-style: dashed; color: var(--muted); }
+.moveleft:active { color: var(--fg); }
+.results { margin-top: 10px; max-height: 60vh; overflow-y: auto; }
+.hit { display: block; width: 100%; text-align: left; padding: 10px 2px; border-bottom: 1px dashed var(--faint); }
+.hit small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.weekbars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 14px 0 4px; }
+.dcol { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dbar { width: 100%; height: 70px; border: 1px solid var(--line); display: flex; align-items: flex-end; }
+.dbar i { display: block; width: 100%; background: var(--fg); box-shadow: 0 0 6px rgba(var(--fg-rgb), .5); }
+.dbar.future { border-style: dashed; opacity: .5; }
+.dname { font-size: 12px; color: var(--muted); }
+.dnum { font-family: 'VT323', monospace; font-size: 16px; }
+.review .kv span:last-child { text-align: right; }
+a.btn { text-decoration: none; display: inline-block; }

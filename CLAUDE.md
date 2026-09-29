@@ -12,7 +12,7 @@
 - **Chat naming convention (same as Forge):** name a chat `vX.Y : <what's being built>` only when it's clearly implementation work toward the next checkpoint (take `X.Y` from LINEAGE.md). Never version-number chats prefixed `Sidebar:` (tangents), `Meta:` (how we work) or `Scratch:` (throwaway). If a chat is ambiguous, leave it unnumbered.
 
 ## Checkpoint Versioning
-- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1_CHECKPOINT.md`** (Phase 0, initiation: name, naming system, design direction, feature plan, sync-ready data model). Built but not yet checkpointed: v0.1.1 (first screens), v0.1.2 (plain-language UI, frequency sections, time blocks, lists, tags) v0.1.3 (Forge-style date navigation + calendar, typed header with live/offline cursor) and v0.1.4 (typing box moved to the top, foldable sections, keyword tags, deleting a category keeps its items). Cut `v0.1.4_CHECKPOINT.md` (covering v0.1.1–v0.1.4) when the owner ends the session.
+- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1.5_CHECKPOINT.md`** (Phase 0 / initiation complete: first working local-only PWA, live on Cloudflare; covers builds v0.1.1–v0.1.5). Next session: start the AWS back office (checkpoint §6). Ask the owner which version number it gets (suggested `v1.0`).
 - **Version scheme:** major = Phase, minor = each checkpoint cut within that phase (minors don't need to match milestone numbers). A new Phase bumps the major number and resets to `.0`.
   - **Phase 0 exception (owner's decision, 2026-09-29):** while Atomic is in initiation (deciding how everything looks, is categorized and works), updates are numbered with a third digit, `v0.1.x` (v0.1.1, v0.1.2, …). Keep using `v0.1.x` until the owner says initiation is finished. Checkpoint files for these use the same number (e.g. `v0.1.2_CHECKPOINT.md`).
 - **When to cut:** on each major milestone or completed feature. Never overwrite a shipped checkpoint. Cut the next one and update the pointer above.
@@ -84,8 +84,8 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - **Local storage: IndexedDB** plus a **sync outbox** (changes queue locally and are sent when online). It is bigger and sturdier than Forge's `localStorage`, and the outbox is ready for Phase 2.
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
-### Frontend file map (v0.1.4 build)
-- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today` = day screen, `calendar`, `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help).
+### Frontend file map (v0.1.5 build)
+- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today` = day screen, `calendar`, `review` = weekly review (route `#/review`, reached from Calendar), `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help, search).
 - Internal names differ from what the app shows (kept so stored data never needs migrating): `atoms` store = items, `elements` store = categories, `isotopes` store = subcategories. **Never show atom/molecule/element/isotope words in the UI.**
 - `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release.
 - Tests: `node test/model.test.mjs` (logic). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
@@ -138,6 +138,17 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - **Layout (v0.1.4):** header → day bar (`#daybar`, date arrows) → typing box (`.quick`, persistent so typing survives re-renders; Today only) → `main`. The empty state is one line, and the examples live behind `?`.
 - **Foldable sections:** tapping any `// SECTION` header (Today and Habits) folds it. Each slash tips over so `//` becomes `=`, and the body collapses with a grid-rows animation. Fold state is saved per section in IndexedDB meta `folded`, quietly, without a re-render, so the animation plays.
 - **Keyword tags never create categories:** `#onetime` `#once` `#task` `#todo` force a one-time task, `#daily` `#weekly` `#monthly` `#weekdays` `#weekends` work like the plain words, and `#habit` makes a daily habit. `#list` and `#timeblock` behave as before. Deleting a category keeps its items, which just become uncategorized.
+- **v0.1.5 features:**
+  - **Undo:** `state.undoable(label, fn)` snapshots every record `save()` touches, and the toast's UNDO restores them for 5 s.
+  - **Focus:** `focusOn` = date, at most 3 per day.
+  - **Move unfinished to tomorrow.**
+  - **Drag reorder:** the ⠿ handle. Listeners sit on `document`, because moving the row drops pointer capture. Saved as `order` within a section.
+  - **Task steps:** `items` on tasks; finishing every step completes the task.
+  - **Timer habits:** `target {kind:'timer', minutes}`. State lives in meta `timers`, and `timerSweep()` finishes expired timers even after the app was closed.
+  - **Time-block clash warnings.**
+  - **Search:** ⌕ in the header.
+  - **Weekly review.**
+  - **No streak freezes:** the owner declined them.
 - **Header:** "ATOMIC" types itself out on load, followed by a blinking block cursor in the theme color while online. Offline, the cursor becomes a blinking ⚠ in the warning color.
 
 ## Live Deployment

@@ -87,7 +87,9 @@ export function findCategory(tag, elements) {
 //   { type:'perWeek', count:n }         n times any day this week  -> WEEKLY
 //   { type:'perMonth', count:n }        n times any day this month -> MONTHLY
 //   { type:'monthDay', day:1..31 }      on that day of the month   -> MONTHLY
-// target: { kind:'check' } | { kind:'count', goal:n }
+// target: { kind:'check' } | { kind:'count', goal:n } | { kind:'timer', minutes:n }
+// task:  items [{ id, text, done }] = optional steps; finishing every step finishes the task
+// any:   focusOn 'YYYY-MM-DD' = pinned to the FOCUS section on that day
 // task:  dueDate | null, completedOn | null
 // block: start 'HH:MM', end 'HH:MM', date | null, repeat null | {type:'daily'|'days'}
 // list:  items [{ id, text, done }], completedOn set automatically when every item is checked
@@ -105,9 +107,10 @@ export function makeAtom(f) {
     date: kind === 'block' ? (f.repeat ? null : (f.date || todayKey())) : null,
     start: kind === 'block' ? f.start : null,
     end: kind === 'block' ? f.end : null,
-    items: kind === 'list' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t)) : null,
+    items: kind === 'list' || kind === 'task' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t)) : null,
     completedOn: null,
     energy: f.energy || null,
+    focusOn: null,
     note: f.note || '',
     order: f.order ?? Date.now(),
   });
@@ -400,7 +403,25 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   if (blocks.length) return blocks;
 
   // ----- habits & one-time tasks -----
-  const words = body.split(/\s+/).filter(Boolean);
+  // "move out: pack, clean, return keys" -> task with steps
+  let steps = null;
+  const sm = body.match(/^([^:]+?):\s+(.+)$/);
+  if (sm && sm[2].includes(',')) { steps = sm[2].split(/[,;]/).map(clean).filter(Boolean); body = sm[1]; }
+  let words = body.split(/\s+/).filter(Boolean);
+  // "study 25 min timer" -> timer habit
+  let timer = null;
+  const ti = words.findIndex(w => /^timer$/i.test(w));
+  if (ti >= 0) {
+    words.splice(ti, 1);
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i].toLowerCase(); let m;
+      if ((m = w.match(/^(\d+)(m|min|mins|minutes)$/))) { timer = +m[1]; words.splice(i, 1); break; }
+      if ((m = w.match(/^(\d+)(h|hr|hour|hours)$/))) { timer = +m[1] * 60; words.splice(i, 1); break; }
+      if (/^\d+$/.test(w) && /^(m|min|mins|minutes)$/i.test(words[i + 1] || '')) { timer = +w; words.splice(i, 2); break; }
+      if (/^\d+$/.test(w) && /^(h|hr|hour|hours)$/i.test(words[i + 1] || '')) { timer = +w * 60; words.splice(i, 2); break; }
+    }
+    if (!timer) timer = 25;
+  }
   const out = { ...base, kind: 'task', repeat: null, target: { kind: 'check' }, dueDate: null };
   let count = null, per = null, monthDay = null, monthly = false, weekly = false;
   const keep = [];
@@ -436,10 +457,68 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   else if (weekly) out.repeat = { type: 'perWeek', count: 1 };
   if (!out.repeat && out.target.kind === 'count') out.repeat = { type: 'daily' };
   if (!out.repeat && special.has('habit')) out.repeat = { type: 'daily' };
+  if (timer) { out.target = { kind: 'timer', minutes: Math.min(600, timer) }; if (!out.repeat) out.repeat = { type: 'daily' }; }
   if (special.has('task')) out.repeat = null;
   if (out.repeat) out.kind = 'habit'; else out.dueDate = dw.date || (defaultDate !== today ? defaultDate : null);
   out.title = clean(dw.rest.join(' '));
+  if (steps) { if (out.kind === 'task') out.items = steps; else out.note = steps.join(', '); }
   return [out];
+}
+
+// ---------- time block clashes ----------
+const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+export function clashes(blocks) {
+  const iv = blocks.map(b => { const s = mins(b.start); let e = mins(b.end); if (e <= s) e += 1440; return { b, s, e }; });
+  const out = new Map();
+  for (let i = 0; i < iv.length; i++) for (let j = i + 1; j < iv.length; j++) {
+    const x = iv[i], y = iv[j];
+    if (x.s < y.e && y.s < x.e) {
+      if (!out.has(x.b.id)) out.set(x.b.id, []); if (!out.has(y.b.id)) out.set(y.b.id, []);
+      out.get(x.b.id).push(y.b.title); out.get(y.b.id).push(x.b.title);
+    }
+  }
+  return out;
+}
+
+// ---------- weekly review ----------
+export function weekReview(atoms, logsFor, ws, today = todayKey()) {
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const k = addDays(ws, i);
+    days.push(k > today ? { k, future: true, due: 0, done: 0 } : { k, ...daySummary(atoms, logsFor, k, today) });
+  }
+  const upto = days.filter(d => !d.future);
+  const total = upto.reduce((n, d) => n + d.due, 0), done = upto.reduce((n, d) => n + d.done, 0);
+  const byCat = new Map();
+  const habits = [];
+  for (const a of atoms) {
+    if (a.deletedAt) continue;
+    const logs = logsFor(a.id);
+    if (a.kind === 'habit') {
+      let doneN = 0, planned = 0;
+      for (const d of upto) { if (!showsOn(a, logs, d.k, today)) continue; planned++; if (logs.get(d.k)?.status === 'done') doneN++; }
+      if (isQuota(a)) planned = a.repeat.type === 'perWeek' ? a.repeat.count : planned;
+      if (planned || doneN) habits.push({ a, done: doneN, planned: a.repeat?.type === 'perMonth' ? null : planned });
+    }
+    for (const d of upto) {
+      if (!showsOn(a, logs, d.k, today) || !countsToday(a, logs, d.k)) continue;
+      const key = a.elementId || '';
+      const c = byCat.get(key) || { due: 0, done: 0, blockMin: 0 };
+      c.due++; if (statusFor(a, logs, d.k) === 'done') c.done++;
+      byCat.set(key, c);
+    }
+    if (a.kind === 'block') for (const d of days) {
+      if (!showsOn(a, logs, d.k, today)) continue;
+      let m = mins(a.end) - mins(a.start); if (m <= 0) m += 1440;
+      const key = a.elementId || '';
+      const c = byCat.get(key) || { due: 0, done: 0, blockMin: 0 };
+      c.blockMin += m; byCat.set(key, c);
+    }
+  }
+  const end = addDays(ws, 6);
+  const slipped = atoms.filter(a => !a.deletedAt && a.kind === 'task' && a.dueDate && a.dueDate >= ws && a.dueDate <= end && a.dueDate < today && !a.completedOn);
+  const finished = atoms.filter(a => !a.deletedAt && (a.kind === 'task' || a.kind === 'list') && a.completedOn && a.completedOn >= ws && a.completedOn <= end);
+  return { days, total, done, byCat, habits, slipped, finished };
 }
 
 // ---------- import merge (same newest-wins rule the cloud sync will use) ----------

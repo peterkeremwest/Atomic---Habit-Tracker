@@ -9,6 +9,7 @@ export const S = {
   settings: { theme: 'green', scanlines: true },
   ui: { folded: new Set(), route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
   pending: 0,
+  timers: {}, // atomId -> { date, remaining (ms), endsAt (ms) | null }
 };
 
 const listeners = new Set();
@@ -45,11 +46,39 @@ export async function load() {
   }
   S.settings = { ...S.settings, ...(await db.getMeta('settings', {})) };
   S.ui.folded = new Set(await db.getMeta('folded', []));
+  S.timers = await db.getMeta('timers', {});
   reindex();
   await refreshPending();
 }
 
+// ---------- undo: record the previous version of everything an action touches ----------
+let undoRec = null, lastUndo = null;
+export async function undoable(label, fn) {
+  undoRec = new Map();
+  let result;
+  try { result = await fn(); } finally {
+    const snap = undoRec; undoRec = null;
+    lastUndo = snap.size ? { label, snap } : null;
+  }
+  return result;
+}
+export const canUndo = () => !!lastUndo;
+export async function undo() {
+  const u = lastUndo; lastUndo = null;
+  if (!u) return false;
+  for (const { store, id, prev } of u.snap.values()) {
+    const cur = S[store].find(r => r.id === id);
+    if (prev) await save(store, { ...prev });
+    else if (cur) await save(store, { ...cur, deletedAt: M.nowIso() });
+  }
+  return true;
+}
+
 async function save(store, rec) {
+  if (undoRec) {
+    const key = store + '|' + rec.id;
+    if (!undoRec.has(key)) { const prev = S[store].find(r => r.id === rec.id); undoRec.set(key, { store, id: rec.id, prev: prev ? { ...prev } : null }); }
+  }
   await db.put(store, rec);
   const list = S[store];
   const i = list.findIndex(r => r.id === rec.id);
@@ -113,6 +142,70 @@ export const setStatus = (atomId, date, status) =>
 
 export async function snooze(atomId) {
   return updateAtom(atomId, { dueDate: M.addDays(M.todayKey(), 1) });
+}
+
+// unfinished one-time tasks showing on `date` -> the next day
+export function leftovers(date) {
+  return live(S.atoms).filter(a => a.kind === 'task' && !a.completedOn && (!a.dueDate || a.dueDate <= date));
+}
+export async function moveLeftovers(date) {
+  const list = leftovers(date);
+  for (const a of list) await updateAtom(a.id, { dueDate: M.addDays(date, 1), focusOn: null });
+  return list.length;
+}
+
+// ---------- focus (up to 3 pinned items per day) ----------
+export const focusCount = date => live(S.atoms).filter(a => a.focusOn === date).length;
+export async function toggleFocus(atomId, date) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return null;
+  if (a.focusOn === date) { await updateAtom(atomId, { focusOn: null }); return 'unpinned'; }
+  if (focusCount(date) >= 3) return 'full';
+  await updateAtom(atomId, { focusOn: date });
+  return 'pinned';
+}
+
+// ---------- manual order (drag to reorder inside a section) ----------
+export async function reorder(ids) {
+  const changed = [];
+  ids.forEach((id, i) => {
+    const a = S.atoms.find(x => x.id === id);
+    if (a && a.order !== i) { const n = { ...a, order: i }; changed.push(n); }
+  });
+  if (!changed.length) return;
+  await db.put('atoms', changed);
+  for (const n of changed) S.atoms[S.atoms.findIndex(x => x.id === n.id)] = n;
+  await refreshPending(); emit();
+}
+
+// ---------- timers (timer habits: tap to start/pause; done when it reaches zero) ----------
+const saveTimers = () => db.setMeta('timers', S.timers);
+export function timerLeft(atomId) {
+  const t = S.timers[atomId];
+  if (!t) return null;
+  return t.endsAt ? Math.max(0, t.endsAt - Date.now()) : t.remaining;
+}
+export const timerRunning = atomId => !!S.timers[atomId]?.endsAt;
+export async function timerToggle(atomId, date) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const t = S.timers[atomId];
+  if (!t || t.date !== date) S.timers[atomId] = { date, remaining: a.target.minutes * 60000, endsAt: Date.now() + a.target.minutes * 60000 };
+  else if (t.endsAt) S.timers[atomId] = { ...t, remaining: Math.max(0, t.endsAt - Date.now()), endsAt: null };
+  else S.timers[atomId] = { ...t, endsAt: Date.now() + t.remaining };
+  await saveTimers(); emit();
+}
+export async function timerReset(atomId) { delete S.timers[atomId]; await saveTimers(); emit(); }
+// finish any timers that ran out (also catches ones that ended while the app was closed)
+export async function timerSweep() {
+  const finished = [];
+  for (const [id, t] of Object.entries(S.timers)) {
+    if (t.endsAt && t.endsAt <= Date.now()) {
+      delete S.timers[id];
+      const a = S.atoms.find(x => x.id === id);
+      if (a && !a.deletedAt) { await setLog(id, t.date, { status: 'done' }); finished.push(a.title); }
+    }
+  }
+  if (finished.length) await saveTimers();
+  return finished;
 }
 
 // ---------- lists ----------

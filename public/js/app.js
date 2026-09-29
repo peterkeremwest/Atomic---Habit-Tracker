@@ -2,15 +2,16 @@
 import { S, load, onChange } from './state.js';
 import * as A from './state.js';
 import * as M from './model.js';
-import { toast, onLongPress, closeSheet, openSheet, esc } from './ui.js';
+import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler } from './ui.js';
 import * as Today from './views/today.js';
 import * as Habits from './views/habits.js';
 import * as Calendar from './views/calendar.js';
+import * as Review from './views/review.js';
 import * as Elements from './views/elements.js';
 import * as System from './views/system.js';
-import { openEditor, openMenu, openRenameCategory, openHelp } from './views/sheets.js';
+import { openEditor, openMenu, openRenameCategory, openHelp, openSearch } from './views/sheets.js';
 
-const ROUTES = { today: Today, calendar: Calendar, habits: Habits, elements: Elements, sys: System };
+const ROUTES = { today: Today, calendar: Calendar, review: Review, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
 const quick = document.querySelector('.quick');
 const daybar = document.getElementById('daybar');
@@ -36,7 +37,7 @@ function render() {
   const input = quick.querySelector('input');
   input.placeholder = S.ui.date === M.todayKey() ? 'add a task, habit or list…' : `add to ${M.prettyDate(S.ui.date)}…`;
   document.querySelectorAll('nav.tabs a').forEach(a => {
-    const on = a.dataset.route === route;
+    const on = a.dataset.route === (route === 'review' ? 'calendar' : route);
     a.classList.toggle('on', on);
     on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current');
   });
@@ -99,7 +100,28 @@ function typeTitle() {
 
 // ---------- taps ----------
 const actions = {
-  async toggle(d) { justChecked = d.id; await A.toggle(d.id, S.ui.date); },
+  async toggle(d) {
+    const a = S.atoms.find(x => x.id === d.id); if (!a) return;
+    const k = S.ui.date;
+    if (a.kind === 'habit' && a.target?.kind === 'timer' && k === M.todayKey() && M.statusFor(a, A.logsFor(a.id), k) !== 'done') {
+      await A.timerToggle(a.id, k);
+      return toast(A.timerRunning(a.id) ? `timer started · ${a.target.minutes} min` : 'timer paused');
+    }
+    justChecked = d.id;
+    const before = M.statusFor(a, A.logsFor(a.id), k);
+    await A.undoable('check', () => A.toggle(d.id, k));
+    const after = M.statusFor(S.atoms.find(x => x.id === d.id), A.logsFor(d.id), k);
+    toast(after === 'done' && before !== 'done' ? `checked · ${a.title}` : a.target?.kind === 'count' ? `${A.logsFor(d.id).get(k)?.count || 0} of ${a.target.goal}` : `unchecked · ${a.title}`, { undo: true });
+  },
+  async moveleft() {
+    const n = await A.undoable('move', () => A.moveLeftovers(S.ui.date));
+    toast(`moved ${n} to tomorrow`, { undo: true });
+  },
+  search: () => openSearch((a, date) => { if (date) { setDate(date); location.hash = '#/today'; } else openEditor(a.id); }),
+  review() { S.ui.reviewWeek = M.weekStart(M.todayKey()); location.hash = '#/review'; },
+  revprev() { S.ui.reviewWeek = M.addDays(S.ui.reviewWeek || M.weekStart(M.todayKey()), -7); render(); },
+  revnext() { S.ui.reviewWeek = M.addDays(S.ui.reviewWeek || M.weekStart(M.todayKey()), 7); render(); },
+  revthis() { S.ui.reviewWeek = M.weekStart(M.todayKey()); render(); },
   dateprev() { setDate(M.addDays(S.ui.date, -1)); },
   datenext() { setDate(M.addDays(S.ui.date, 1)); },
   gotoday() { setDate(M.todayKey()); if (S.ui.route !== 'today') location.hash = '#/today'; },
@@ -125,14 +147,19 @@ const actions = {
     await A.setStatus(d.id, d.date, next);
   },
   openel(d) { S.ui.openEl = S.ui.openEl === d.id ? null : d.id; render(); },
-  async item(d) { justChecked = d.id; await A.toggleListItem(d.id, d.item); },
+  async item(d) {
+    justChecked = d.id;
+    await A.undoable('item', () => A.toggleListItem(d.id, d.item));
+    const a = S.atoms.find(x => x.id === d.id);
+    toast(a.completedOn ? `all done · ${a.title} ✓` : 'updated', { undo: true });
+  },
   async deliso(d) { await A.deleteIsotope(d.id); toast('subcategory removed'); },
   editel: d => openRenameCategory(d.id),
   async delel(d) {
     const e = A.elementById(d.id);
     const n = A.atomsInElement(d.id).length;
     if (!confirm(`Delete the ${e.name} category?${n ? `\n\nIts ${n} item${n === 1 ? '' : 's'} will stay, just without a category.` : ''}`)) return;
-    await A.deleteElement(d.id); S.ui.openEl = null; if (S.ui.filterEl === d.id) S.ui.filterEl = null; toast('category deleted');
+    await A.undoable('delcat', () => A.deleteElement(d.id)); S.ui.openEl = null; if (S.ui.filterEl === d.id) S.ui.filterEl = null; toast('category deleted', { undo: true });
   },
   async export() {
     const data = await A.exportData();
@@ -200,7 +227,7 @@ quick.querySelector('form').addEventListener('submit', async e => {
   for (const p of parsed) if (!p.elementId && !p.newCategory && S.ui.filterEl) p.elementId = S.ui.filterEl;
   if (parsed.every(p => !p.title)) return toast('add a title too');
   const newCats = [...new Set(parsed.map(p => p.newCategory).filter(Boolean))];
-  const made = await A.addParsed(parsed);
+  const made = await A.undoable('add', () => A.addParsed(parsed));
   input.value = '';
   const first = made[0] || {};
   const what = first.appended ? `added ${first.appended} item${first.appended === 1 ? '' : 's'} to ${first.title}`
@@ -208,7 +235,15 @@ quick.querySelector('form').addEventListener('submit', async e => {
     : first.kind === 'habit' ? `habit added · ${M.describeRepeat(first)}`
     : first.kind === 'block' ? `time block added · ${M.fmtTime(first.start)}–${M.fmtTime(first.end)}`
     : first.kind === 'list' ? `list added · ${first.items.length} items` : 'task added';
-  toast(newCats.length ? `${what} · new category ${newCats.map(M.tagOf).join(' ')}` : what);
+  // warn if a new time block overlaps anything already scheduled that day
+  let warn = '';
+  for (const b of made.filter(x => x && x.kind === 'block')) {
+    const day = b.date || S.ui.date;
+    const same = A.live(S.atoms).filter(x => x.kind === 'block' && M.isScheduled(x, day));
+    const hit = M.clashes(same).get(b.id);
+    if (hit) { warn = ` · ⚠ overlaps ${hit.join(', ')}`; break; }
+  }
+  toast((newCats.length ? `${what} · new category ${newCats.map(M.tagOf).join(' ')}` : what) + warn, { undo: true });
 });
 quick.querySelector('[data-x="help"]').addEventListener('click', openHelp);
 quick.querySelector('[data-x="full"]').addEventListener('click', () => {
@@ -220,11 +255,61 @@ quick.querySelector('[data-x="full"]').addEventListener('click', () => {
   openEditor(null, p);
 });
 
+setUndoHandler(async () => { if (await A.undo()) toast('undone'); });
+
+// ---------- drag to reorder (the ⠿ handle; stays inside its own section) ----------
+main.addEventListener('pointerdown', e => {
+  const h = e.target.closest('.drag'); if (!h) return;
+  const row = h.closest('.listcard') || h.closest('.row');
+  const box = row.parentElement;
+  if (!box.classList.contains('secinner')) return;
+  e.preventDefault();
+  let lastY = e.clientY, offset = 0;
+  row.classList.add('dragging');
+  const move = ev => {
+    offset += ev.clientY - lastY; lastY = ev.clientY;
+    row.style.transform = `translateY(${offset}px)`;
+    const prev = row.previousElementSibling, next = row.nextElementSibling;
+    if (prev && prev.dataset.atom && offset < -prev.offsetHeight / 2) { offset += prev.offsetHeight; box.insertBefore(row, prev); }
+    else if (next && next.dataset.atom && offset > next.offsetHeight / 2) { offset -= next.offsetHeight; box.insertBefore(next, row); }
+    row.style.transform = `translateY(${offset}px)`;
+  };
+  const up = async () => {
+    document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+    row.classList.remove('dragging'); row.style.transform = '';
+    const ids = [...box.children].map(c => c.dataset.atom).filter(Boolean);
+    await A.undoable('reorder', () => A.reorder(ids));
+  };
+  // listen on the document: moving the row in the page drops the handle's pointer capture
+  document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+});
+
+// ---------- timers: tick the visible clocks every second; finish them at zero ----------
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.18, 0.36].forEach(t => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = 880; g.gain.value = 0.05;
+      o.connect(g); g.connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.1);
+    });
+  } catch { /* sound is optional */ }
+}
+setInterval(async () => {
+  document.querySelectorAll('[data-timer]').forEach(el => {
+    const left = A.timerLeft(el.dataset.timer);
+    if (left !== null) el.textContent = Today.fmtClock(left);
+  });
+  const finished = await A.timerSweep();
+  if (finished.length) { beep(); navigator.vibrate?.([120, 60, 120]); toast(`time's up · ${finished.join(', ')} ✓`); render(); }
+}, 1000);
+
 // sheet: close on backdrop tap
 document.getElementById('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
 document.getElementById('sheet').addEventListener('close', e => { e.target.querySelector('.inner').innerHTML = ''; });
 
 // install prompt (Chrome/Android)
+document.querySelector('header .hsearch').addEventListener('click', () => actions.search());
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; if (S.ui.route === 'sys') render(); });
 window.addEventListener('online', () => { paintStatus(); render(); });
 window.addEventListener('offline', () => { paintStatus(); render(); });

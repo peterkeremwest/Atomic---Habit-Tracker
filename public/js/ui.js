@@ -2,13 +2,23 @@
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-let toastTimer;
-export function toast(msg) {
+let toastTimer, undoHandler = null;
+export const setUndoHandler = fn => { undoHandler = fn; };
+// toast('saved', { undo: true }) shows an UNDO button for 5 seconds
+export function toast(msg, { undo = false } = {}) {
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.innerHTML = '';
+  t.append(document.createTextNode(msg));
+  if (undo && undoHandler) {
+    const b = document.createElement('button');
+    b.className = 'undo vt'; b.textContent = 'UNDO';
+    b.onclick = async () => { t.classList.remove('show'); await undoHandler(); };
+    t.append(b);
+  }
+  t.classList.toggle('hasaction', undo);
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), undo ? 5000 : 2200);
 }
 
 // Bottom sheet built on <dialog>. mount(root) wires the content's own handlers.
@@ -42,6 +52,7 @@ export const asciiBar = (done, total, width = 10) => {
 export function onLongPress(root, selector, cb, ms = 480) {
   let timer = null, startX = 0, startY = 0, target = null;
   root.addEventListener('pointerdown', e => {
+    if (e.target.closest('.drag, .items, .additem')) return;
     target = e.target.closest(selector);
     if (!target) return;
     startX = e.clientX; startY = e.clientY;

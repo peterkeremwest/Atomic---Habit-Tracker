@@ -1,5 +1,5 @@
-// TODAY — everything for today, grouped by how often it repeats. Checked items stay visible.
-import { S, live, logsFor, elementById, isotopeById } from '../state.js';
+// TODAY — everything for the chosen day, grouped by how often it repeats. Checked items stay visible.
+import { S, live, logsFor, elementById, isotopeById, timerLeft, timerRunning, leftovers } from '../state.js';
 import * as M from '../model.js';
 import { esc, foldSection } from '../ui.js';
 
@@ -10,15 +10,26 @@ function catLabel(a) {
   if (!el || el.deletedAt) return '';
   return `<span class="tag">${esc(M.tagOf(el.name))}${iso && !iso.deletedAt ? ' · ' + esc(iso.name) : ''}</span>`;
 }
+export const fmtClock = ms => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const handle = (a, drag) => drag ? `<span class="drag" data-drag="${a.id}" aria-hidden="true" title="drag to reorder">⠿</span>` : '';
 
-export function atomRow(a, k, { just = null } = {}) {
+function steps(a) {
+  if (!a.items?.length) return '';
+  return `<ul class="items steps">${a.items.map(i => `<li class="${i.done ? 'done' : ''}">
+    <button class="chk small vt" data-action="item" data-id="${a.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} step ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
+    <span class="itxt">${esc(i.text)}</span></li>`).join('')}</ul>`;
+}
+
+export function atomRow(a, k, { just = null, drag = true } = {}) {
   const logs = logsFor(a.id);
   const real = M.todayKey();
   const future = k > real;
   const status = M.statusFor(a, logs, k);
   const meta = [catLabel(a)];
+  const tk = a.target?.kind;
   if (a.kind === 'habit') {
     meta.push(`<span>${esc(M.describeRepeat(a))}</span>`);
+    if (tk === 'timer') meta.push(`<span>${a.target.minutes}-minute timer</span>`);
     if (M.isQuota(a)) {
       const unit = a.repeat.type === 'perMonth' ? 'month' : 'week';
       const n = M.periodDoneCount(a, logs, k);
@@ -26,34 +37,46 @@ export function atomRow(a, k, { just = null } = {}) {
     }
     const st = M.streakText(M.streak(a, logs, future ? real : k));
     if (st) meta.push(`<span>${st}</span>`);
-  } else if (a.kind === 'task' && a.completedOn && a.completedOn !== k) {
-    meta.push(`<span>done ${M.relativeDay(a.completedOn, real)}</span>`);
-  } else if (a.kind === 'task' && a.dueDate && !a.completedOn && a.dueDate < k) {
-    meta.push(`<span class="overdue">overdue since ${M.shortDate(a.dueDate)}</span>`);
+  } else if (a.kind === 'task') {
+    if (a.items?.length) meta.push(`<span>${a.items.filter(i => i.done).length} of ${a.items.length} steps</span>`);
+    if (a.completedOn && a.completedOn !== k) meta.push(`<span>done ${M.relativeDay(a.completedOn, real)}</span>`);
+    else if (a.dueDate && !a.completedOn && a.dueDate < k) meta.push(`<span class="overdue">overdue since ${M.shortDate(a.dueDate)}</span>`);
   }
   if (a.energy) meta.push(`<span>${a.energy} energy</span>`);
-  const isCount = a.kind === 'habit' && a.target?.kind === 'count';
-  const box = isCount
-    ? `[<span class="mark">${logs.get(k)?.count || 0}/${a.target.goal}</span>]`
-    : `[<span class="mark">${MARK[status] || '&nbsp;'}</span>]`;
-  const label = isCount ? `Add one to ${a.title}` : (status === 'done' ? `Uncheck ${a.title}` : `Check ${a.title}`);
+
+  let box, label, cls = '';
+  if (a.kind === 'habit' && tk === 'count') {
+    box = `[<span class="mark">${logs.get(k)?.count || 0}/${a.target.goal}</span>]`; label = `Add one to ${a.title}`; cls = 'count';
+  } else if (a.kind === 'habit' && tk === 'timer' && status !== 'done' && k === real) {
+    const left = timerLeft(a.id);
+    const run = timerRunning(a.id);
+    box = `[<span class="mark" data-timer="${a.id}">${fmtClock(left ?? a.target.minutes * 60000)}</span>]`;
+    label = run ? `Pause timer for ${a.title}` : `Start ${a.target.minutes}-minute timer for ${a.title}`;
+    cls = 'count timer' + (run ? ' running' : '');
+  } else {
+    box = `[<span class="mark">${MARK[status] || '&nbsp;'}</span>]`; label = status === 'done' ? `Uncheck ${a.title}` : `Check ${a.title}`;
+  }
   const crossed = status === 'done' || status === 'skipped' || status === 'met';
+  const pinned = a.focusOn === k;
   return `<div class="row ${crossed ? 'done' : ''} ${just === a.id ? 'just' : ''}" data-atom="${a.id}">
-    <button class="chk vt ${isCount ? 'count' : ''}" data-action="toggle" data-id="${a.id}" aria-label="${esc(label)}" aria-pressed="${status === 'done'}" ${future && a.kind === 'habit' ? 'disabled title="can\'t check off a future day"' : ''}>${box}</button>
+    <button class="chk vt ${cls}" data-action="toggle" data-id="${a.id}" aria-label="${esc(label)}" aria-pressed="${status === 'done'}" ${future && a.kind === 'habit' ? 'disabled title="can\'t check off a future day"' : ''}>${box}</button>
     <div class="body">
-      <button class="title" data-action="edit" data-id="${a.id}">${esc(a.title)}</button>
+      <button class="title" data-action="edit" data-id="${a.id}">${pinned ? '<span class="pin vt">★</span> ' : ''}${esc(a.title)}</button>
       ${meta.filter(Boolean).length ? `<div class="meta">${meta.filter(Boolean).join('')}</div>` : ''}
+      ${a.kind === 'task' ? steps(a) : ''}
     </div>
+    ${handle(a, drag)}
     <button class="more" data-action="menu" data-id="${a.id}" aria-label="More options for ${esc(a.title)}">⋯</button>
   </div>`;
 }
 
-function blockRow(b, k) {
+function blockRow(b, k, clash) {
   const now = M.nowHHMM();
   const overnight = b.end <= b.start;
   const isNow = k === M.todayKey() && (overnight ? (now >= b.start || now < b.end) : (now >= b.start && now < b.end));
   const past = k < M.todayKey() || (k === M.todayKey() && !overnight && now >= b.end);
-  const meta = [catLabel(b), b.repeat ? `<span>${esc(M.describeRepeat(b))}</span>` : ''].filter(Boolean);
+  const meta = [catLabel(b), b.repeat ? `<span>${esc(M.describeRepeat(b))}</span>` : '',
+    clash ? `<span class="overdue">⚠ overlaps ${clash.map(esc).join(', ')}</span>` : ''].filter(Boolean);
   return `<div class="row block ${past ? 'past' : ''} ${isNow ? 'now' : ''}" data-atom="${b.id}">
     <div class="time vt" aria-label="${M.fmtTime(b.start)} to ${M.fmtTime(b.end)}">${M.fmtTime(b.start)}<br><span class="dim">– ${M.fmtTime(b.end)}</span></div>
     <div class="body">
@@ -64,16 +87,17 @@ function blockRow(b, k) {
   </div>`;
 }
 
-function listCard(l, k, just) {
+function listCard(l, k, just, drag = true) {
   const done = l.items.filter(i => i.done).length;
   const all = l.items.length > 0 && done === l.items.length;
   return `<div class="listcard ${all ? 'done' : ''} ${just === l.id ? 'just' : ''}" data-atom="${l.id}">
     <div class="row ${all ? 'done' : ''}" data-atom="${l.id}">
       <button class="chk vt" data-action="toggle" data-id="${l.id}" aria-label="${all ? 'Uncheck all in' : 'Check all in'} ${esc(l.title)}">[<span class="mark">${all ? '✓' : '&nbsp;'}</span>]</button>
       <div class="body">
-        <button class="title" data-action="edit" data-id="${l.id}">${esc(l.title)}</button>
+        <button class="title" data-action="edit" data-id="${l.id}">${l.focusOn === k ? '<span class="pin vt">★</span> ' : ''}${esc(l.title)}</button>
         <div class="meta">${catLabel(l)}<span>${done} of ${l.items.length} checked</span></div>
       </div>
+      ${handle(l, drag)}
       <button class="more" data-action="menu" data-id="${l.id}" aria-label="More options for ${esc(l.title)}">⋯</button>
     </div>
     <ul class="items">${l.items.map(i => `<li class="${i.done ? 'done' : ''}">
@@ -85,20 +109,22 @@ function listCard(l, k, just) {
 }
 
 const SECTIONS = [
-  ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'],
+  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'],
 ];
 
 export function renderTop() { return dayNav(S.ui.date); }
 
 export function dayNav(k) {
   const real = M.todayKey();
+  const sunday = k === real && M.weekday(real) === 0;
   return `<div class="daynav">
     <button class="btn vt" data-action="dateprev" aria-label="Previous day">◀</button>
     <button class="dlabel" data-action="datepick" aria-label="Pick a date. Showing ${M.prettyDate(k)}">
       <span class="vt glow">${M.prettyDate(k)}</span><small>${M.relativeDay(k, real)}${k !== real ? '' : ' · tap to pick a date'}</small></button>
     <button class="btn vt" data-action="datenext" aria-label="Next day">▶</button>
   </div>
-  ${k !== real ? `<button class="btn vt backtoday" data-action="gotoday">◀ BACK TO TODAY</button>` : ''}`;
+  ${k !== real ? `<button class="btn vt backtoday" data-action="gotoday">◀ BACK TO TODAY</button>` : ''}
+  ${sunday ? `<button class="btn vt backtoday" data-action="review">IT'S SUNDAY · OPEN YOUR WEEKLY REVIEW ▶</button>` : ''}`;
 }
 
 export function render({ just } = {}) {
@@ -119,15 +145,21 @@ export function render({ just } = {}) {
     .concat(`<button class="chip ${lowOnly ? 'on' : ''}" data-action="lowonly">Low energy</button>`);
 
   const bySection = new Map(SECTIONS.map(([key]) => [key, []]));
-  for (const a of shown) bySection.get(M.frequency(a)).push(a);
+  for (const a of shown) bySection.get(a.focusOn === k && a.kind !== 'block' ? 'focus' : M.frequency(a)).push(a);
   bySection.get('schedule').sort((x, y) => x.start.localeCompare(y.start));
-  bySection.get('once').sort((x, y) => (x.dueDate || '9').localeCompare(y.dueDate || '9'));
+  const clash = M.clashes(bySection.get('schedule'));
 
   const body = SECTIONS.filter(([key]) => bySection.get(key).length).map(([key, label]) => {
     const list = bySection.get(key);
     const n = key === 'schedule' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
-    const rows = list.map(a => key === 'schedule' ? blockRow(a, k) : key === 'list' ? listCard(a, k, just) : atomRow(a, k, { just })).join('');
-    return foldSection('today:' + key, label, n, rows, S.ui.folded.has('today:' + key));
+    let rows = list.map(a => key === 'schedule' ? blockRow(a, k, clash.get(a.id))
+      : a.kind === 'list' ? listCard(a, k, just) : atomRow(a, k, { just })).join('');
+    if (key === 'once' && k === real) {
+      const left = leftovers(k).filter(a => a.focusOn !== k).length;
+      if (left) rows += `<button class="btn vt moveleft" data-action="moveleft">MOVE ${left} UNFINISHED TO TOMORROW ▶</button>`;
+    }
+    const title = key === 'focus' ? `FOCUS <small class="dim">(${list.length} of 3 pinned)</small>` : label;
+    return foldSection('today:' + key, title, n, rows, S.ui.folded.has('today:' + key));
   }).join('');
 
   const nothingAtAll = !live(S.atoms).length;
@@ -137,6 +169,7 @@ export function render({ just } = {}) {
       <span class="vt glow">${counted.length ? `${doneN} of ${counted.length} done` : 'nothing due'}</span>
     </div>
     <div class="chips" role="toolbar" aria-label="Filter by category">${chips.join('')}</div>
-    ${nothingAtAll ? `<p class="empty" style="margin-top:16px">&gt; nothing here yet. type in the box above, or tap <span class="vt">?</span> for examples.</p>` : (body || `<p class="empty" style="margin-top:20px">&gt; nothing for ${k === real ? 'today' : 'this day'}${filterEl || lowOnly ? ' with this filter' : ''}.</p>`)}
+    ${nothingAtAll ? `<p class="empty" style="margin-top:16px">&gt; nothing here yet. type in the box above, or tap <span class="vt">?</span> for examples.</p>`
+      : (body || `<p class="empty" style="margin-top:20px">&gt; nothing for ${k === real ? 'today' : 'this day'}${filterEl || lowOnly ? ' with this filter' : ''}.</p>`)}
   `;
 }
