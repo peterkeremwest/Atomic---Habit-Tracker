@@ -26,6 +26,7 @@
   6. A companion `vX.X_EXPLANATION.md`: plain language, a few flowing paragraphs (not bullets), before/after framing, using only the glossary below
 - **This file is updated in the same turn a checkpoint is cut**, so the pointer never lags.
 - **LINEAGE.md is updated in the same turn too:** append one line to "Historical Milestones", then rewrite "Cumulative Capabilities".
+- **Sync the claude.ai Project in the same turn (same as Forge):** re-upload `CLAUDE.md` (Project path `/CLAUDE.md`), `checkpoints/LINEAGE.md`, the new checkpoint + explanation files (under `checkpoints/`), and `public/index.html` + `public/sw.js` if they changed. Bare filenames land in a `claude/` folder in the Project, so always give the full path.
 - **Glossary maintenance:** before an EXPLANATION.md mentions a component with no row below, add the row first, in the same turn, inside the same company metaphor.
 
 ### Plain-language glossary (one metaphor, shared with Forge: the whole system as a company)
