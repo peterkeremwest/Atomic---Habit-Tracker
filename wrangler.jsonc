@@ -1,0 +1,12 @@
+// Cloudflare hosting config for Atomic's frontend.
+// Workers Static Assets: serves everything inside ./public as the website.
+// Only ./public is published. CLAUDE.md, checkpoints/ and backend/ are never served.
+// "name" must match the Worker name in the Cloudflare dashboard, or Workers Builds fails.
+{
+  "name": "atomic",
+  "compatibility_date": "2026-09-29",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}

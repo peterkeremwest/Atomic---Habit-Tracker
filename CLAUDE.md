@@ -68,6 +68,8 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 | Conditional write (newest-wins) ◆ | A clerk who checks the date stamp on an incoming memo and ignores it if the file already holds a newer version |
 | EventBridge Scheduler ◆ | The receptionist's alarm clock: rings a clerk at an exact time (reminders, daily resets) |
 | Web Push (VAPID) ◆ | A postcard mailed to the customer's home: it arrives even when they're not in the store |
+| Workers Builds (Cloudflare Git integration) ◆ | The leasing company's own construction crew: it watches the records room and rebuilds the storefront every time new blueprints are filed |
+| `public/` folder ◆ | The shop floor: the only part of the building customers can walk into. Back offices (rulebook, history log) are behind a locked door |
 | GitHub repository ◆ | The records room holding every past version of the blueprints |
 
 **Extension rule:** classify a new tool by function (who does the work / where things are stored / who's allowed in / how requests travel / how it's reported on / how releases roll out) and pick its equivalent from that family.
@@ -82,7 +84,7 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
 ### Hosting
-- **Frontend: Cloudflare** static hosting (Pages, or Workers static assets, whichever Cloudflare recommends at setup time), connected to the GitHub repo: push to `main` → automatic publish. Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
+- **Frontend: Cloudflare Workers + Static Assets**, deployed by **Workers Builds** (Git integration): push to `main` → automatic publish. Config: `wrangler.jsonc` at repo root (Worker name `atomic`, which must match the dashboard). **Only `public/` is served**, so all app files go there and CLAUDE.md, checkpoints and the backend stay private. Pages is not used (Cloudflare recommends Workers for new projects). Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
 - **Backend stays on AWS** (`us-east-1`). The Cloudflare URL must be listed as an allowed origin in the Atomic API's CORS settings (Phase 2).
 
 ### Backend (Phase 2+), a SAM stack like Forge's
@@ -114,7 +116,7 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 
 ## Live Deployment
 - **Repo:** `github.com/peterkeremwest/Atomic---Habit-Tracker`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").
-- **Host:** Cloudflare (not connected yet).
+- **Host:** Cloudflare Worker `atomic` via Workers Builds (connection pending).
 - **Live URL:** none yet.
 - **Git from `device_bash`:** use Forge's proven pattern. `credential.helper` is set repo-locally to `store --file=.git-credentials`, and `.git-credentials` stays in `.gitignore` (never committed). It uses the same fine-grained PAT as Forge (renamed, and granted access to this repo on 2026-09-29). The file was copied from Forge's repo. If push/pull fails, check that `.git-credentials` exists here and that the PAT hasn't expired (it has a 90-day expiry, set up 2026-09-18). Never assume a push succeeded without checking `git status`/`git log origin/main`.
 - **Git lock files from `device_bash`:** the Cowork shell can't delete files in this folder unless deletion is granted for the session. Without it, every git command leaves `.git/index.lock` / `HEAD.lock` behind and the next one fails. Ask for delete permission once per session before running git here, and if a lock is left over, remove `.git/*.lock` (only when no other git process is running).
