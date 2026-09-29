@@ -10,11 +10,16 @@ export const S = {
   ui: { folded: new Set(), route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
   pending: 0,
   timers: {}, // atomId -> { date, remaining (ms), endsAt (ms) | null }
+  sync: { state: 'off', lastAt: null, error: null }, // cloud sync status, shown in SETTINGS
 };
 
 const listeners = new Set();
 export const onChange = fn => listeners.add(fn);
 export const emit = () => listeners.forEach(fn => fn());
+// called after any local change is saved (cloud sync listens here to send it)
+const savedHooks = new Set();
+export const onSaved = fn => savedHooks.add(fn);
+const saved = () => savedHooks.forEach(fn => fn());
 
 let logIndex = new Map(); // atomId -> Map<date, log>
 function reindex() {
@@ -85,7 +90,7 @@ async function save(store, rec) {
   if (i >= 0) list[i] = rec; else list.push(rec);
   if (store === 'logs') reindex();
   await refreshPending();
-  emit();
+  emit(); saved();
   return rec;
 }
 
@@ -178,7 +183,7 @@ export async function reorder(ids) {
   if (!changed.length) return;
   await db.put('atoms', changed);
   for (const n of changed) S.atoms[S.atoms.findIndex(x => x.id === n.id)] = n;
-  await refreshPending(); emit();
+  await refreshPending(); emit(); saved();
 }
 
 // ---------- timers (timer habits: tap to start/pause; done when it reaches zero) ----------
@@ -321,12 +326,38 @@ export async function importData(json) {
     if (changed.length) { await db.put(s, changed, { keepStamp: true }); n += changed.length; }
     S[s] = merged;
   }
-  reindex(); await refreshPending(); emit();
+  reindex(); await refreshPending(); emit(); saved();
   return n;
 }
 
-export async function resetAll() {
+export async function resetAll({ keepSettings = false } = {}) {
+  const keep = S.settings;
   await db.wipe();
+  if (keepSettings) await db.setMeta('settings', keep);
   for (const s of db.STORES) S[s] = [];
   await load(); emit();
 }
+
+// ---------- cloud sync: records arriving from the back office ----------
+// newest-wins merge, saved quietly (not queued to be sent back)
+export async function applyRemote(itemsByStore) {
+  let n = 0;
+  for (const s of db.STORES) {
+    const incoming = itemsByStore?.[s] || [];
+    if (!incoming.length) continue;
+    const { merged, changed } = M.mergeRecords(S[s], incoming);
+    if (!changed.length) continue;
+    await db.putQuiet(s, changed);
+    S[s] = merged; n += changed.length;
+  }
+  if (n) { reindex(); emit(); }
+  return n;
+}
+// first sign-in on a device that has nothing of its own yet: take the cloud copy as-is
+export async function replaceAll(itemsByStore) {
+  for (const s of db.STORES) { S[s] = itemsByStore?.[s] || []; await db.replaceQuiet(s, S[s]); }
+  await db.emptyOutbox();
+  reindex(); await refreshPending(); emit();
+}
+export const hasOwnData = () => S.atoms.length > 0 || S.logs.length > 0;
+export const refreshPendingCount = () => refreshPending();

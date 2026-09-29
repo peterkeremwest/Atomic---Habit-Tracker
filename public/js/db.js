@@ -47,6 +47,51 @@ export async function put(store, records, { keepStamp = false } = {}) {
   return list;
 }
 
+// Save records that came FROM the cloud: no new stamp, and not queued to be sent back.
+export async function putQuiet(store, records) {
+  if (!records.length) return;
+  const db = await open();
+  const tx = db.transaction(store, 'readwrite');
+  for (const r of records) tx.objectStore(store).put(r);
+  await done(tx);
+}
+// Replace a store's whole contents quietly (first sign-in on a fresh device adopts the cloud copy).
+export async function replaceQuiet(store, records) {
+  const db = await open();
+  const tx = db.transaction(store, 'readwrite');
+  tx.objectStore(store).clear();
+  for (const r of records) tx.objectStore(store).put(r);
+  await done(tx);
+}
+
+// ---------- outbox ("outgoing-mail tray") ----------
+export async function readOutbox() {
+  const db = await open();
+  return result(db.transaction('outbox').objectStore('outbox').getAll());
+}
+// remove everything up to and including seq (later changes stay queued)
+export async function clearOutbox(uptoSeq) {
+  const db = await open();
+  const tx = db.transaction('outbox', 'readwrite');
+  tx.objectStore('outbox').delete(IDBKeyRange.upperBound(uptoSeq));
+  await done(tx);
+}
+export async function emptyOutbox() {
+  const db = await open();
+  const tx = db.transaction('outbox', 'readwrite');
+  tx.objectStore('outbox').clear();
+  await done(tx);
+}
+// queue every record on this device (first sign-in, so nothing made before signing in is left behind)
+export async function requeueAll() {
+  const db = await open();
+  const rows = [];
+  for (const s of STORES) for (const r of await getAll(s)) rows.push({ store: s, id: r.id, at: r.updatedAt });
+  const tx = db.transaction('outbox', 'readwrite');
+  for (const row of rows) tx.objectStore('outbox').add(row);
+  await done(tx);
+}
+
 export async function getMeta(key, fallback = null) {
   const db = await open();
   const row = await result(db.transaction('meta').objectStore('meta').get(key));

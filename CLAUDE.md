@@ -74,6 +74,11 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 | Workers Builds (Cloudflare Git integration) ◆ | The leasing company's own construction crew: it watches the records room and rebuilds the storefront every time new blueprints are filed |
 | `public/` folder ◆ | The shop floor: the only part of the building customers can walk into. Back offices (rulebook, history log) are behind a locked door |
 | GitHub repository ◆ | The records room holding every past version of the blueprints |
+| AWS Budgets alert ◆ | The accountant's warning note: an email when the month's bill nears the limit you set |
+| DynamoDB point-in-time recovery ◆ | A nightly-and-hourly photocopy of the filing cabinet: it can be rewound to any second in the last 35 days |
+| API Gateway throttling ◆ | The front desk's queue rope: only so many visitors per second, so a runaway loop can't run up the bill |
+| CloudWatch log retention ◆ | The sign-in log is shredded after a set time (30 days) instead of piling up forever |
+| Cursor-based pull (`?since=`) ◆ | Asking the records clerk "only the pages filed since my last visit" instead of the whole drawer |
 
 **Extension rule:** classify a new tool by function (who does the work / where things are stored / who's allowed in / how requests travel / how it's reported on / how releases roll out) and pick its equivalent from that family.
 
@@ -89,8 +94,9 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 ### Frontend file map (v0.1.5 build)
 - `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today` = day screen, `calendar`, `review` = weekly review (route `#/review`, reached from Calendar), `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help, search).
 - Internal names differ from what the app shows (kept so stored data never needs migrating): `atoms` store = items, `elements` store = categories, `isotopes` store = subcategories. **Never show atom/molecule/element/isotope words in the UI.**
-- `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release.
-- Tests: `node test/model.test.mjs` (logic). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
+- **Cloud (v0.2.2):** `config.js` (Cognito pool/client + API URL; cloud stays off until `clientId` and `apiUrl` are filled), `auth.js` (Forge's raw Cognito REST calls, tokens in IndexedDB meta `auth`), `sync.js` (outbox push in batches of 25 → `POST /data/batch`, then pull `GET /data?since=<cursor>`, newest `updatedAt` wins; first sign-in on a device with no items adopts the cloud copy so starter categories aren't duplicated; sign-out sends what's waiting, then clears the device), `views/account.js` (sign in / create account / confirm code / reset password sheet). Sync status repaints only SETTINGS, never Today (so typing isn't interrupted).
+- `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release. New files must also be added to `SHELL` in `sw.js` (one missing file makes the whole offline install fail).
+- Tests: `node test/model.test.mjs` (logic), `node test/backend.test.mjs` (data clerk vs an in-memory table), `node test/mock-cloud.mjs` + `python3 test/e2e_cloud.py` (two phones, one account, fake Cognito + the real clerk; `npm i` in `backend/src/data` first, dev-only). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
 - Workflow used: build + test in the cloud workspace, write files into this folder, then commit + push from `device_bash`.
 
 ### Hosting
@@ -99,9 +105,9 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 
 ### Backend (Phase 2+), a SAM stack like Forge's
 - **Auth:** reuse Forge's Cognito user pool (`us-east-1_xmt1rEukj`) with a **new app client for Atomic**. One login works in both apps, and both see the same user `sub`, which is what makes cross-app sync possible.
-- **Stack `atomic-backend`** (`backend/template.yaml`): HTTP API + Cognito JWT authorizer → Lambda (`nodejs24.x`, arm64) → DynamoDB `AtomicTable`, single-table design:
-  - `pk = USER#<sub>`, `sk = ELEMENT#id | ISOTOPE#id | ATOM#id | MOLECULE#id | ORBIT#id | STATE#id | LOG#<date> | PROFILE`
-  - Routes follow Forge's `data.js` pattern: `GET /data` full hydrate, `PUT/DELETE /data/<entity>/<id>`.
+- **Stack `atomic-backend`** (`backend/template.yaml`, written v0.2.2; see `backend/README.md`): creates the Atomic app client (`atomic-web`, USER_PASSWORD + REFRESH flows, no secret) on Forge's pool, HTTP API + Cognito JWT authorizer (audience = that client) → Lambda `DataFunction` (`nodejs24.x`, arm64, AWS SDK from the runtime, nothing bundled) → DynamoDB `AtomicTable` (PITR on, `DeletionPolicy: Retain`). Also: API throttling 10/s (burst 20), 30-day log retention, and, when `AlertEmail` is given, an SNS-emailed error alarm + a $5/month AWS Budget.
+  - `pk = USER#<sub>`, `sk = ELEMENT#id | ISOTOPE#id | ATOM#id | LOG#<logId>` (later: `MOLECULE#`, `ORBIT#`, `STATE#`, `PROFILE`). Row = `{ pk, sk, store, updatedAt, syncedAt, data }`.
+  - Routes (differs from Forge on purpose: Atomic already has an outbox and soft deletes): `GET /data[?since=<cursor>]`, `POST /data/batch` (≤25 records, conditional put `updatedAt < :u` = newest wins; returns `saved`/`stale`). No DELETE route.
 
 ### Forge ↔ Atomic sync (Phase 3)
 - A shared **EventBridge custom bus** (`personal-sync-bus`). When a shared item changes, the app's data Lambda publishes a `SharedItemChanged` event. Shared items are Atomic items tagged `#fitness` and Forge habits/workouts linked to them.

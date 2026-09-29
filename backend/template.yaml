@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Atomic back office (v0.2.2). One stack holds everything Atomic needs in AWS:
+  its own badge reader on Forge's shared Cognito badge office, a DynamoDB filing
+  cabinet, an HTTP API front desk with the Cognito bouncer, one data clerk (Lambda),
+  plus the safety nets: a monthly budget alarm, an error alarm and 30-day logs.
+
+Parameters:
+  CognitoUserPoolId:
+    Type: String
+    Default: us-east-1_xmt1rEukj
+    Description: Forge's existing user pool. Atomic shares it, so one login works in both apps.
+  AllowedOrigin:
+    Type: String
+    Default: https://app.atomicapp.workers.dev
+    Description: The live Atomic site (Cloudflare). Only this origin (plus localhost for testing) may call the API.
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Where budget and error alarms are emailed. Leave empty to skip both alarms.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 5
+    Description: Email a warning when this AWS account's monthly bill reaches 80% of this (actual) or 100% (forecast).
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures: [arm64]
+    Timeout: 10
+    MemorySize: 256
+
+Resources:
+  # ---------- who's allowed in: Atomic's own badge reader on the shared badge office ----------
+  AtomicUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref CognitoUserPoolId
+      ClientName: atomic-web
+      GenerateSecret: false                 # public browser app: a secret can't be kept in page code
+      ExplicitAuthFlows:                    # same flows Forge's client uses (raw REST, no SDK)
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED   # don't reveal which emails have accounts
+      EnableTokenRevocation: true
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes, RefreshToken: days }
+
+  # ---------- where things are stored: the filing cabinet, one drawer per user ----------
+  AtomicTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain                  # `sam delete` never throws away your data
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: AtomicTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true    # rewind the cabinet to any second in the last 35 days
+
+  # ---------- how requests travel: the front desk with the bouncer ----------
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin, 'http://localhost:3000', 'http://localhost:8765']
+        AllowHeaders: [Authorization, Content-Type]
+        AllowMethods: [GET, POST, OPTIONS]
+        MaxAge: 600
+      DefaultRouteSettings:                 # a runaway loop can't run up the bill
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPoolId}
+              audience: [!Ref AtomicUserPoolClient]
+            IdentitySource: $request.header.Authorization
+        DefaultAuthorizer: CognitoAuthorizer
+
+  # ---------- who does the work: the data clerk ----------
+  DataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/data/
+      Handler: data.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref AtomicTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AtomicTable
+      Events:
+        # Explicit methods only, never "Method: ANY" (Forge lesson: ANY swallows the CORS
+        # preflight into the JWT authorizer and every browser call fails with 401).
+        GetData:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /data, Method: GET }
+        PostBatch:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /data/batch, Method: POST }
+
+  DataFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${DataFunction}
+      RetentionInDays: 30                   # the sign-in log is shredded after a month, not kept forever
+
+  # ---------- how it's reported on: alarms ----------
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlertEmail
+    Properties:
+      DisplayName: Atomic alerts
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlertEmail }   # AWS emails a "Confirm subscription" link first
+
+  DataErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmDescription: Atomic's data clerk failed at least 3 times in 5 minutes.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref DataFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasAlertEmail
+    Properties:
+      Budget:
+        BudgetName: atomic-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref AlertEmail }]
+
+Outputs:
+  ApiUrl:
+    Description: Paste into public/js/config.js as apiUrl.
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  UserPoolClientId:
+    Description: Paste into public/js/config.js as clientId.
+    Value: !Ref AtomicUserPoolClient
+  TableName:
+    Value: !Ref AtomicTable

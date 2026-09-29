@@ -307,3 +307,9 @@ a.btn { text-decoration: none; display: inline-block; }
 .expbar i { display: block; min-width: 3px; flex-basis: 0; }
 .expcard.done .costs, .expcard.done .exptotal, .expcard.done .expbar { opacity: .55; }
 .expcard.done .exptotal span:last-child { text-shadow: none; }
+
+/* ---------- v0.2.2: account sheet ---------- */
+.acclinks { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; }
+.linkbtn { color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; padding: 4px 0; }
+.linkbtn:active { color: var(--fg); }
+.sys .kv span:last-child { text-align: right; overflow-wrap: anywhere; }

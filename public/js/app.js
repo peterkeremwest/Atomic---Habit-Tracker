@@ -10,6 +10,9 @@ import * as Review from './views/review.js';
 import * as Elements from './views/elements.js';
 import * as System from './views/system.js';
 import { openEditor, openMenu, openRenameCategory, openHelp, openSearch } from './views/sheets.js';
+import { openAccount, askSignOut } from './views/account.js';
+import * as Sync from './sync.js';
+import * as Auth from './auth.js';
 
 const ROUTES = { today: Today, calendar: Calendar, review: Review, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
@@ -170,11 +173,17 @@ const actions = {
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   },
   import() { document.getElementById('importFile')?.click(); },
+  signin: () => openAccount('signin'),
+  signup: () => openAccount('signup'),
+  signout: () => askSignOut(),
+  async syncnow() { await Sync.syncNow(); toast(S.sync.state === 'idle' ? 'synced' : S.sync.state === 'offline' ? 'offline · will sync when you are back online' : S.sync.state === 'error' ? "couldn't sync, will try again" : 'sync is not on'); },
   async install() { if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; render(); },
   async reset() {
-    if (!confirm('Erase ALL Atomic data on this device? Export a backup first if unsure.')) return;
+    const cloud = Auth.signedIn();
+    if (!confirm(`Erase ALL Atomic data on this device?${cloud ? ' Your cloud copy stays, and you will be signed out.' : ' Export a backup first if unsure.'}`)) return;
     if (prompt('Type ERASE to confirm') !== 'ERASE') return;
-    await A.resetAll(); toast('all data erased');
+    if (cloud) await Sync.signOutAndClear(true); else await A.resetAll();
+    toast('all data erased on this device');
   },
 };
 
@@ -345,5 +354,7 @@ onChange(render);
   paintStatus();
   typeTitle();
   go();
+  Sync.onStatus(() => { if (S.ui.route === 'sys') render(); });
+  Sync.start().catch(err => console.warn('sync start failed', err));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
 })();
