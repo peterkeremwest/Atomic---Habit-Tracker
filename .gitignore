@@ -1,0 +1,8 @@
+# Git credential store for device_bash (contains a live GitHub PAT — never commit this)
+.git-credentials
+
+# Local dev / build output
+node_modules/
+backend/.aws-sam/
+.DS_Store
+Thumbs.db
