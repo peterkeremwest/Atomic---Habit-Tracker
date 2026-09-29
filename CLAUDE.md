@@ -83,6 +83,12 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - **Local storage: IndexedDB** plus a **sync outbox** (changes queue locally and are sent when online). It is bigger and sturdier than Forge's `localStorage`, and the outbox is ready for Phase 2.
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
+### Frontend file map (v0.1.1 build)
+- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (today, habits, elements, system) and `sheets.js` (editor + long-press menu).
+- `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release.
+- Tests: `node test/model.test.mjs` (logic). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
+- Workflow used: build + test in the cloud workspace, write files into this folder, then commit + push from `device_bash`.
+
 ### Hosting
 - **Frontend: Cloudflare Workers + Static Assets**, deployed by **Workers Builds** (Git integration): push to `main` → automatic publish. Config: `wrangler.jsonc` at repo root (Worker name `atomic`, which must match the dashboard). **Only `public/` is served**, so all app files go there and CLAUDE.md, checkpoints and the backend stay private. Pages is not used (Cloudflare recommends Workers for new projects). Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
 - **Backend stays on AWS** (`us-east-1`). The Cloudflare URL must be listed as an allowed origin in the Atomic API's CORS settings (Phase 2).
