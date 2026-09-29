@@ -82,6 +82,12 @@ async function setLog(atomId, date, patch) {
 export async function toggle(atomId, date = M.todayKey()) {
   const a = S.atoms.find(x => x.id === atomId);
   if (!a) return;
+  if (a.kind === 'list') {
+    const allDone = a.items.length && a.items.every(i => i.done);
+    const items = a.items.map(i => ({ ...i, done: !allDone }));
+    return updateAtom(atomId, { items, completedOn: !allDone && items.length ? date : null });
+  }
+  if (a.kind === 'block') return;
   if (a.kind === 'task') {
     const doneNow = !a.completedOn;
     await updateAtom(atomId, { completedOn: doneNow ? date : null });
@@ -107,14 +113,60 @@ export async function snooze(atomId) {
   return updateAtom(atomId, { dueDate: M.addDays(M.todayKey(), 1) });
 }
 
-// ---------- elements & isotopes ----------
-export function validSymbol(sym, exceptId = null) {
-  if (!/^[A-Z][a-z]?$/.test(sym)) return 'Symbol must be 1–2 letters, like Fi or H';
-  if (live(S.elements).some(e => e.symbol === sym && e.id !== exceptId)) return `${sym} is already used`;
+// ---------- lists ----------
+export async function toggleListItem(atomId, itemId) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const items = a.items.map(i => (i.id === itemId ? { ...i, done: !i.done } : i));
+  const all = items.length && items.every(i => i.done);
+  return updateAtom(atomId, { items, completedOn: all ? (a.completedOn || M.todayKey()) : null });
+}
+export async function addListItems(atomId, texts) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const add = texts.map(t => t.trim()).filter(Boolean).map(text => ({ id: M.uid('li'), text, done: false }));
+  if (!add.length) return;
+  return updateAtom(atomId, { items: [...a.items, ...add], completedOn: null });
+}
+export async function removeListItem(atomId, itemId) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const items = a.items.filter(i => i.id !== itemId);
+  const all = items.length && items.every(i => i.done);
+  return updateAtom(atomId, { items, completedOn: all ? (a.completedOn || M.todayKey()) : null });
+}
+
+// ---------- quick add (handles new categories, lists that already exist, several time blocks) ----------
+export async function addParsed(parsedList) {
+  const made = [];
+  for (const p of parsedList) {
+    const f = { ...p };
+    if (f.newCategory) {
+      const existing = M.findCategory(f.newCategory, S.elements);
+      f.elementId = existing ? existing.id : (await addCategory(f.newCategory)).id;
+    }
+    if (f.newSub && f.elementId) {
+      const iso = isotopesOf(f.elementId).find(i => i.name.toLowerCase() === f.newSub.toLowerCase());
+      f.isotopeId = iso ? iso.id : (await addIsotope(f.elementId, f.newSub.charAt(0).toUpperCase() + f.newSub.slice(1))).id;
+    }
+    delete f.newCategory; delete f.newSub;
+    if (f.kind === 'list') {
+      const open = live(S.atoms).find(a => a.kind === 'list' && !a.completedOn && a.title.toLowerCase() === f.title.toLowerCase());
+      if (open) { await addListItems(open.id, f.items); made.push({ ...open, appended: f.items.length }); continue; }
+    }
+    if (!f.title) continue;
+    made.push(await addAtom(f));
+  }
+  return made;
+}
+
+// ---------- categories (stored as 'elements') & subcategories (stored as 'isotopes') ----------
+export function validCategoryName(name, exceptId = null) {
+  const n = String(name || '').trim();
+  if (!n) return 'Give the category a name';
+  if (n.length > 30) return 'Keep the name under 30 characters';
+  if (live(S.elements).some(e => e.id !== exceptId && e.name.toLowerCase().replace(/\s+/g, '') === n.toLowerCase().replace(/\s+/g, ''))) return `${n} already exists`;
   return null;
 }
-export const addElement = (symbol, name) =>
-  save('elements', M.newRecord('el', { symbol, name: name.trim(), order: Date.now() }));
+export const addCategory = name =>
+  save('elements', M.newRecord('el', { name: name.trim(), order: Date.now() }));
 export async function updateElement(id, patch) {
   const e = elementById(id); if (!e) return;
   return save('elements', { ...e, ...patch });

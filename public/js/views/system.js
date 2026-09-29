@@ -1,4 +1,4 @@
-// SYS — theme, backup, storage status, install.
+// SETTINGS — theme, backup, storage status, install.
 import { S, live } from '../state.js';
 import { APP_VERSION } from '../version.js';
 import { esc } from '../ui.js';
@@ -15,9 +15,9 @@ export function render({ canInstall }) {
     </div>
 
     <div class="section vt"><span>// DATA</span></div>
-    <div class="kv"><span>atoms</span><span>${live(S.atoms).length}</span></div>
-    <div class="kv"><span>elements</span><span>${live(S.elements).length}</span></div>
-    <div class="kv"><span>day logs</span><span>${S.logs.filter(l => !l.deletedAt).length}</span></div>
+    <div class="kv"><span>items</span><span>${live(S.atoms).length}</span></div>
+    <div class="kv"><span>categories</span><span>${live(S.elements).length}</span></div>
+    <div class="kv"><span>habit check-ins</span><span>${S.logs.filter(l => !l.deletedAt && l.status).length}</span></div>
     <div class="kv"><span>waiting for cloud sync</span><span>${S.pending}</span></div>
     <p class="dim" style="font-size:13px">everything is stored on this device only. cloud sync (and syncing with Forge) comes in a later version; changes are already queued for it.</p>
     <div class="actions" style="justify-content:flex-start;flex-wrap:wrap">

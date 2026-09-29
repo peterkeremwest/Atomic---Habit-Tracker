@@ -1,37 +1,88 @@
 import assert from 'node:assert/strict';
 import * as M from '../public/js/model.js';
+
 const { elements, isotopes } = M.seedRecords();
+const [fit, career, home, money] = elements;
 const T = '2026-09-29'; // Tuesday
-let p = M.parseQuickAdd('gym mon wed fri #Fi.str', elements, isotopes, T);
-assert.equal(p.kind,'habit'); assert.deepEqual(p.repeat,{type:'days',days:[1,3,5]}); assert.equal(p.title,'gym');
-assert.equal(p.elementId, elements[0].id); assert.equal(p.isotopeId, isotopes[0].id);
-p = M.parseQuickAdd('water x8 daily', elements, isotopes, T);
-assert.deepEqual(p.target,{kind:'count',goal:8}); assert.equal(p.kind,'habit');
-p = M.parseQuickAdd('run 3x #fi !low', elements, isotopes, T);
-assert.deepEqual(p.repeat,{type:'perWeek',count:3}); assert.equal(p.energy,'low');
-p = M.parseQuickAdd('renew passport tomorrow #Hm', elements, isotopes, T);
-assert.equal(p.kind,'task'); assert.equal(p.dueDate,'2026-09-30'); assert.equal(p.title,'renew passport');
-p = M.parseQuickAdd('#Zz thing', elements, isotopes, T); assert.equal(p.title,'#Zz thing');
-assert.equal(M.weekday(T),2); assert.equal(M.weekStart(T),'2026-09-28'); assert.equal(M.addDays('2026-12-31',1),'2027-01-01');
+const P = t => M.parseQuickAdd(t, elements, isotopes, T);
+const one = t => { const r = P(t); assert.equal(r.length, 1, t); return r[0]; };
+
+// habits & tasks
+let p = one('#fitness workout monday wednesday friday');
+assert.equal(p.kind, 'habit'); assert.deepEqual(p.repeat, { type: 'days', days: [1, 3, 5] });
+assert.equal(p.title, 'workout'); assert.equal(p.elementId, fit.id);
+p = one('workout mondays and wednesdays #fitness/strength');
+assert.deepEqual(p.repeat, { type: 'days', days: [1, 3] }); assert.equal(p.isotopeId, isotopes[0].id); assert.equal(p.title, 'workout');
+p = one('read 20 min daily #personal !low'); assert.equal(p.kind, 'habit'); assert.equal(p.repeat.type, 'daily'); assert.equal(p.energy, 'low'); assert.equal(p.title, 'read 20 min');
+p = one('water x8'); assert.deepEqual(p.target, { kind: 'count', goal: 8 }); assert.equal(p.repeat.type, 'daily');
+p = one('run 3x a week #fit'); assert.deepEqual(p.repeat, { type: 'perWeek', count: 3 }); assert.equal(p.elementId, fit.id); assert.equal(p.title, 'run');
+p = one('run 3 times a week'); assert.deepEqual(p.repeat, { type: 'perWeek', count: 3 });
+p = one('call grandma weekly'); assert.deepEqual(p.repeat, { type: 'perWeek', count: 1 });
+p = one('deep clean monthly'); assert.deepEqual(p.repeat, { type: 'perMonth', count: 1 });
+p = one('haircut 2x/month'); assert.deepEqual(p.repeat, { type: 'perMonth', count: 2 });
+p = one('pay rent monthly 1st #money'); assert.deepEqual(p.repeat, { type: 'monthDay', day: 1 }); assert.equal(p.title, 'pay rent'); assert.equal(p.elementId, money.id);
+p = one('pay rent every month on the 15th'); assert.deepEqual(p.repeat, { type: 'monthDay', day: 15 }); assert.equal(p.title, 'pay rent');
+p = one('renew passport tomorrow #home'); assert.equal(p.kind, 'task'); assert.equal(p.dueDate, '2026-09-30'); assert.equal(p.elementId, home.id);
+p = one('buy a gift'); assert.equal(p.kind, 'task'); assert.equal(p.dueDate, null); assert.equal(p.title, 'buy a gift');
+p = one('meditate #mindfulness'); assert.equal(p.newCategory, 'Mindfulness'); assert.equal(p.elementId, null);
+
+// time blocks
+p = one('#timeblock work 5 pm - 11pm'); assert.equal(p.kind, 'block'); assert.equal(p.start, '17:00'); assert.equal(p.end, '23:00'); assert.equal(p.title, 'work'); assert.equal(p.date, T);
+let r = P('#timeblock date 2pm-7pm, movie 5pm-8pm'); assert.equal(r.length, 2);
+assert.equal(r[0].title, 'date'); assert.equal(r[0].start, '14:00'); assert.equal(r[1].title, 'movie'); assert.equal(r[1].end, '20:00');
+p = one('movie 5pm-8pm'); assert.equal(p.kind, 'block');
+p = one('work 9am-5pm weekdays'); assert.deepEqual(p.repeat, { type: 'days', days: [1, 2, 3, 4, 5] }); assert.equal(p.date, null);
+p = one('#timeblock gym 5-7'); assert.equal(p.start, '17:00'); assert.equal(p.end, '19:00');
+p = one('#timeblock shift 9-5'); assert.equal(p.start, '09:00'); assert.equal(p.end, '17:00');
+p = one('lunch 11:30-1pm tomorrow'); assert.equal(p.start, '11:30'); assert.equal(p.end, '13:00'); assert.equal(p.date, '2026-09-30');
+p = one('read chapters 1-2'); assert.equal(p.kind, 'task'); // no time signal -> not a block
+assert.equal(M.fmtTime('17:00'), '5 PM'); assert.equal(M.fmtTime('09:30'), '9:30 AM'); assert.equal(M.fmtTime('00:00'), '12 AM');
+
+// lists
+p = one('#list : groceries: eggs, soap, juice'); assert.equal(p.kind, 'list'); assert.equal(p.title, 'groceries');
+assert.deepEqual(p.items, ['eggs', 'soap', 'juice']);
+p = one('#list packing #home'); assert.equal(p.title, 'packing'); assert.deepEqual(p.items, []); assert.equal(p.elementId, home.id);
+
+// dates
+assert.equal(M.weekday(T), 2); assert.equal(M.weekStart(T), '2026-09-28'); assert.equal(M.addDays('2026-12-31', 1), '2027-01-01');
+assert.equal(M.monthStart(T), '2026-09-01'); assert.equal(M.daysInMonth('2026-02-10'), 28);
+
+// frequency sections
+const mk = f => { const a = M.makeAtom(f); a.createdAt = '2026-09-01T00:00:00Z'; return a; };
+assert.equal(M.frequency(mk({ kind: 'habit', title: 'a', repeat: { type: 'daily' } })), 'daily');
+assert.equal(M.frequency(mk({ kind: 'habit', title: 'a', repeat: { type: 'days', days: [1] } })), 'weekly');
+assert.equal(M.frequency(mk({ kind: 'habit', title: 'a', repeat: { type: 'monthDay', day: 3 } })), 'monthly');
+assert.equal(M.frequency(mk({ kind: 'task', title: 'a' })), 'once');
+
 // streaks
-const h = M.makeAtom({kind:'habit',title:'x',repeat:{type:'daily'}}); h.createdAt='2026-09-01T00:00:00Z';
-const L = new Map([['2026-09-28',{status:'done'}],['2026-09-27',{status:'skipped'}],['2026-09-26',{status:'done'}],['2026-09-24',{status:'done'}]]);
-assert.deepEqual(M.streak(h,L,T),{value:2,unit:'d'}); // today open, 28 done, 27 skip bridges, 26 done, 25 missing -> break
-L.set(T,{status:'done'}); assert.equal(M.streak(h,L,T).value,3);
-const d = M.makeAtom({kind:'habit',title:'y',repeat:{type:'days',days:[1,3,5]}}); d.createdAt='2026-09-01T00:00:00Z';
-assert.equal(M.isScheduled(d,T),false);
-const L2=new Map([['2026-09-28',{status:'done'}],['2026-09-25',{status:'done'}],['2026-09-23',{status:'done'}]]);
-assert.equal(M.streak(d,L2,T).value,3);
-const w = M.makeAtom({kind:'habit',title:'z',repeat:{type:'perWeek',count:2}}); w.createdAt='2026-09-01T00:00:00Z';
-const L3=new Map([['2026-09-28',{status:'done'}],['2026-09-22',{status:'done'}],['2026-09-24',{status:'done'}]]);
-assert.equal(M.isDueToday(w,L3,T),true); L3.set('2026-09-29',{status:'done'});
-assert.equal(M.streak(w,L3,T).value,2); assert.equal(M.isDueToday(w,new Map([['2026-09-28',{status:'done'}],['2026-09-27',{status:'done'}]]),T),true);
-const w2=new Map([['2026-09-28',{status:'done'}],['2026-09-30',{status:'done'}]]);
-assert.equal(M.isDueToday(w,new Map([['2026-09-28',{status:'done'}],['2026-10-01',{status:'done'}]]),'2026-10-02'),false);
-const t = M.makeAtom({kind:'task',title:'a',dueDate:'2026-10-05'}); assert.equal(M.isDueToday(t,new Map(),T),false);
-t.dueDate='2026-09-20'; assert.equal(M.isDueToday(t,new Map(),T),true);
-assert.equal(M.statusFromCount(3,8),'partial'); assert.equal(M.statusFromCount(8,8),'done');
-const a={id:'1',updatedAt:'2026-01-02'}, b={id:'1',updatedAt:'2026-01-03'};
-assert.equal(M.mergeRecords([a],[b]).changed.length,1); assert.equal(M.mergeRecords([b],[a]).changed.length,0);
-assert.equal(M.describeRepeat(d),'MO WE FR');
+const h = mk({ kind: 'habit', title: 'x', repeat: { type: 'daily' } });
+const L = new Map([['2026-09-28', { status: 'done' }], ['2026-09-27', { status: 'skipped' }], ['2026-09-26', { status: 'done' }], ['2026-09-24', { status: 'done' }]]);
+assert.deepEqual(M.streak(h, L, T), { value: 2, unit: 'day' });
+L.set(T, { status: 'done' }); assert.equal(M.streak(h, L, T).value, 3);
+assert.equal(M.streakText({ value: 3, unit: 'day' }), '3-day streak');
+const d = mk({ kind: 'habit', title: 'y', repeat: { type: 'days', days: [1, 3, 5] } });
+assert.equal(M.isScheduled(d, T), false);
+assert.equal(M.streak(d, new Map([['2026-09-28', { status: 'done' }], ['2026-09-25', { status: 'done' }], ['2026-09-23', { status: 'done' }]]), T).value, 3);
+const w = mk({ kind: 'habit', title: 'z', repeat: { type: 'perWeek', count: 2 } });
+const L3 = new Map([['2026-09-28', { status: 'done' }], ['2026-09-22', { status: 'done' }], ['2026-09-24', { status: 'done' }]]);
+assert.equal(M.statusFor(w, L3, T), null); L3.set(T, { status: 'done' });
+assert.equal(M.streak(w, L3, T).value, 2); assert.equal(M.statusFor(w, L3, '2026-09-30'), 'met');
+assert.equal(M.countsToday(w, L3, '2026-09-30'), false);
+const mo = mk({ kind: 'habit', title: 'm', repeat: { type: 'monthDay', day: 31 } });
+assert.equal(M.isScheduled(mo, '2026-09-30'), true); assert.equal(M.isScheduled(mo, '2026-09-29'), false);
+const pm = mk({ kind: 'habit', title: 'pm', repeat: { type: 'perMonth', count: 1 } });
+assert.equal(M.streak(pm, new Map([['2026-09-03', { status: 'done' }], ['2026-08-20', { status: 'done' }]]), T).value, 2);
+
+// visibility: done items stay on today
+const t = mk({ kind: 'task', title: 'a', dueDate: '2026-10-05' }); assert.equal(M.showsOn(t, new Map(), T), false);
+t.dueDate = '2026-09-20'; assert.equal(M.showsOn(t, new Map(), T), true);
+t.completedOn = T; assert.equal(M.showsOn(t, new Map(), T), true); assert.equal(M.showsOn(t, new Map(), '2026-09-30'), false);
+const b = mk({ kind: 'block', title: 'w', start: '09:00', end: '17:00', repeat: { type: 'days', days: [1, 2] } });
+assert.equal(M.showsOn(b, new Map(), T), true); assert.equal(M.showsOn(b, new Map(), '2026-10-01'), false);
+
+assert.equal(M.statusFromCount(3, 8), 'partial'); assert.equal(M.statusFromCount(8, 8), 'done');
+const a1 = { id: '1', updatedAt: '2026-01-02' }, b1 = { id: '1', updatedAt: '2026-01-03' };
+assert.equal(M.mergeRecords([a1], [b1]).changed.length, 1); assert.equal(M.mergeRecords([b1], [a1]).changed.length, 0);
+assert.equal(M.describeRepeat(d), 'every Monday, Wednesday & Friday');
+assert.equal(M.describeRepeat(mo), 'every month on the 31st');
 console.log('model tests passed');

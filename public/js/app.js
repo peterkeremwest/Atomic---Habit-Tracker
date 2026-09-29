@@ -7,7 +7,7 @@ import * as Today from './views/today.js';
 import * as Habits from './views/habits.js';
 import * as Elements from './views/elements.js';
 import * as System from './views/system.js';
-import { openEditor, openMenu } from './views/sheets.js';
+import { openEditor, openMenu, openRenameCategory, openHelp } from './views/sheets.js';
 
 const ROUTES = { today: Today, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
@@ -59,22 +59,15 @@ const actions = {
     await A.setStatus(d.id, d.date, next);
   },
   openel(d) { S.ui.openEl = S.ui.openEl === d.id ? null : d.id; render(); },
-  async deliso(d) { await A.deleteIsotope(d.id); toast('isotope removed'); },
-  async editel(d) {
-    const e = A.elementById(d.id);
-    const name = prompt('Element name', e.name); if (name === null) return;
-    const symbol = prompt('Symbol (1–2 letters)', e.symbol); if (symbol === null) return;
-    const sym = symbol.trim().charAt(0).toUpperCase() + symbol.trim().slice(1, 2).toLowerCase();
-    const err = A.validSymbol(sym, e.id); if (err) return toast(err);
-    if (!name.trim()) return;
-    await A.updateElement(e.id, { name: name.trim(), symbol: sym });
-  },
+  async item(d) { justChecked = d.id; await A.toggleListItem(d.id, d.item); },
+  async deliso(d) { await A.deleteIsotope(d.id); toast('subcategory removed'); },
+  editel: d => openRenameCategory(d.id),
   async delel(d) {
     const e = A.elementById(d.id);
     const n = A.atomsInElement(d.id).length;
     if (n) return toast(`move or delete its ${n} atom${n === 1 ? '' : 's'} first`);
-    if (!confirm(`Delete element ${e.symbol} (${e.name})?`)) return;
-    await A.deleteElement(d.id); S.ui.openEl = null; toast('element deleted');
+    if (!confirm(`Delete the ${e.name} category?`)) return;
+    await A.deleteElement(d.id); S.ui.openEl = null; if (S.ui.filterEl === d.id) S.ui.filterEl = null; toast('category deleted');
   },
   async export() {
     const data = await A.exportData();
@@ -116,15 +109,17 @@ main.addEventListener('submit', async e => {
   const f = e.target;
   e.preventDefault();
   if (f.dataset.form === 'addiso') {
-    const name = f.name.value.trim(); if (!name) return;
-    await A.addIsotope(f.dataset.id, name); toast('isotope added');
+    const name = f.t.value.trim(); if (!name) return;
+    await A.addIsotope(f.dataset.id, name); toast('subcategory added');
   }
   if (f.dataset.form === 'addel') {
-    const raw = f.symbol.value.trim();
-    const sym = raw.charAt(0).toUpperCase() + raw.slice(1, 2).toLowerCase();
-    const err = A.validSymbol(sym); if (err) return toast(err);
-    if (!f.name.value.trim()) return;
-    await A.addElement(sym, f.name.value); toast(`element ${sym} added`);
+    const err = A.validCategoryName(f.t.value); if (err) return toast(err);
+    const e = await A.addCategory(f.t.value); toast(`${M.tagOf(e.name)} added`);
+  }
+  if (f.dataset.form === 'additem') {
+    const text = f.t.value.trim(); if (!text) return;
+    await A.addListItems(f.dataset.id, text.split(',')); 
+    setTimeout(() => main.querySelector(`form[data-form=additem][data-id="${f.dataset.id}"] input`)?.focus(), 0);
   }
 });
 
@@ -136,16 +131,25 @@ quick.querySelector('form').addEventListener('submit', async e => {
   const input = e.target.q;
   const text = input.value.trim();
   if (!text) return openEditor();
-  const p = M.parseQuickAdd(text, S.elements, S.isotopes);
-  if (!p.title) return toast('add a title too');
-  if (!p.elementId && S.ui.filterEl) p.elementId = S.ui.filterEl;
-  await A.addAtom(p);
+  const parsed = M.parseQuickAdd(text, S.elements, S.isotopes);
+  for (const p of parsed) if (!p.elementId && !p.newCategory && S.ui.filterEl) p.elementId = S.ui.filterEl;
+  if (parsed.every(p => !p.title)) return toast('add a title too');
+  const newCats = [...new Set(parsed.map(p => p.newCategory).filter(Boolean))];
+  const made = await A.addParsed(parsed);
   input.value = '';
-  toast(p.kind === 'habit' ? `habit added · ${M.describeRepeat(p)}` : 'task added');
+  const first = made[0] || {};
+  const what = first.appended ? `added ${first.appended} item${first.appended === 1 ? '' : 's'} to ${first.title}`
+    : made.length > 1 ? `${made.length} time blocks added`
+    : first.kind === 'habit' ? `habit added · ${M.describeRepeat(first)}`
+    : first.kind === 'block' ? `time block added · ${M.fmtTime(first.start)}–${M.fmtTime(first.end)}`
+    : first.kind === 'list' ? `list added · ${first.items.length} items` : 'task added';
+  toast(newCats.length ? `${what} · new category ${newCats.map(M.tagOf).join(' ')}` : what);
 });
+quick.querySelector('[data-x="help"]').addEventListener('click', openHelp);
 quick.querySelector('[data-x="full"]').addEventListener('click', () => {
   const input = quick.querySelector('input');
-  const p = input.value.trim() ? M.parseQuickAdd(input.value, S.elements, S.isotopes) : {};
+  const p = input.value.trim() ? M.parseQuickAdd(input.value, S.elements, S.isotopes)[0] : {};
+  if (p.newCategory) { const c = M.findCategory(p.newCategory, S.elements); if (c) p.elementId = c.id; }
   input.value = '';
   openEditor(null, p);
 });

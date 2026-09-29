@@ -12,8 +12,9 @@
 - **Chat naming convention (same as Forge):** name a chat `vX.Y : <what's being built>` only when it's clearly implementation work toward the next checkpoint (take `X.Y` from LINEAGE.md). Never version-number chats prefixed `Sidebar:` (tangents), `Meta:` (how we work) or `Scratch:` (throwaway). If a chat is ambiguous, leave it unnumbered.
 
 ## Checkpoint Versioning
-- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1_CHECKPOINT.md`** (Phase 0, initiation: name, naming system, design direction, feature plan, sync-ready data model).
+- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1_CHECKPOINT.md`** (Phase 0, initiation: name, naming system, design direction, feature plan, sync-ready data model). Built but not yet checkpointed: v0.1.1 (first screens) and v0.1.2 (plain-language UI, frequency sections, time blocks, lists, tags). Cut `v0.1.2_CHECKPOINT.md` when the owner ends the session.
 - **Version scheme:** major = Phase, minor = each checkpoint cut within that phase (minors don't need to match milestone numbers). A new Phase bumps the major number and resets to `.0`.
+  - **Phase 0 exception (owner's decision, 2026-09-29):** while Atomic is in initiation (deciding how everything looks, is categorized and works), updates are numbered with a third digit, `v0.1.x` (v0.1.1, v0.1.2, …). Keep using `v0.1.x` until the owner says initiation is finished. Checkpoint files for these use the same number (e.g. `v0.1.2_CHECKPOINT.md`).
 - **When to cut:** on each major milestone or completed feature. Never overwrite a shipped checkpoint. Cut the next one and update the pointer above.
 - **Required contents of each `vX.X_CHECKPOINT.md`:**
   1. Current Phase & Milestone status
@@ -83,8 +84,9 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - **Local storage: IndexedDB** plus a **sync outbox** (changes queue locally and are sent when online). It is bigger and sturdier than Forge's `localStorage`, and the outbox is ready for Phase 2.
 - Theme: dark terminal. Phosphor green by default, amber and red selectable, muted secondary tones. Checkbox completion `[ ]` → `[✓]`, **no swipe gestures**.
 
-### Frontend file map (v0.1.1 build)
-- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (today, habits, elements, system) and `sheets.js` (editor + long-press menu).
+### Frontend file map (v0.1.2 build)
+- `public/index.html` is the shell. `public/js/app.js` handles routing and tap wiring. `state.js` holds the in-memory state plus every data action. `db.js` is IndexedDB + outbox. `model.js` is pure logic (dates, due/streak rules, quick-add parser, newest-wins merge). `ui.js` has helpers. `views/*.js` are the screens (`today`, `habits`, `elements` = Categories screen, `system` = Settings screen) and `sheets.js` (editor, long-press menu, rename category, quick-add help).
+- Internal names differ from what the app shows (kept so stored data never needs migrating): `atoms` store = items, `elements` store = categories, `isotopes` store = subcategories. **Never show atom/molecule/element/isotope words in the UI.**
 - `public/js/version.js` (`APP_VERSION`) and `CACHE` in `public/sw.js` must be bumped together on each release.
 - Tests: `node test/model.test.mjs` (logic). `test/e2e.py` is a Playwright mobile-viewport run against `python3 -m http.server` in `public/`; it runs in Claude's cloud workspace, which has Chromium.
 - Workflow used: build + test in the cloud workspace, write files into this folder, then commit + push from `device_bash`.
@@ -100,25 +102,36 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
   - Routes follow Forge's `data.js` pattern: `GET /data` full hydrate, `PUT/DELETE /data/<entity>/<id>`.
 
 ### Forge ↔ Atomic sync (Phase 3)
-- A shared **EventBridge custom bus** (`personal-sync-bus`). When a shared item changes, the app's data Lambda publishes a `SharedItemChanged` event. Shared items are Atoms in the Fitness element (`Fi`) and Forge habits/workouts linked to them.
+- A shared **EventBridge custom bus** (`personal-sync-bus`). When a shared item changes, the app's data Lambda publishes a `SharedItemChanged` event. Shared items are Atomic items tagged `#fitness` and Forge habits/workouts linked to them.
 - Each app has a **rule** targeting its own `SyncInFunction`, which does a **conditional write** (newest `updatedAt` wins) and ignores events it sent itself (no loops). Failures get 2 retries → SQS DLQ, same as Forge's thumbnail pipeline.
 - Requires a matching change in Forge (publish + receive), done as a Forge checkpoint too.
 - Shared record envelope: `{ id, sourceApp, kind, title, element, completions: {date: status}, createdAt, updatedAt, deletedAt }`. Soft deletes only.
 
 ### Later phases
 - Reminders: EventBridge Scheduler → Lambda → Web Push. (Correction to v0.1: SNS doesn't deliver browser push notifications; Web Push is sent from a Lambda.)
-- Orbits auto-switching States; the NFC deck station hooks into States via phone automations (outside the PWA).
+- Time blocks auto-switching flow states (Do Not Disturb, Studying, Working out…); the NFC deck station hooks into flow states via phone automations (outside the PWA).
 - Monitoring (CloudWatch alarms), weekly review (Step Functions), plan suggestions (Bedrock).
 
 ### Phase plan
 | Phase | Versions | Goal |
 |---|---|---|
-| 0 | v0.x | Planning, repo, stack |
-| 1 | v1.x | Local-only PWA MVP live on Cloudflare: Elements/Isotopes, Atoms, Today + Habits screens, terminal theme |
+| 0 | v0.1.x | Initiation: planning, repo, stack, and deciding how everything looks, is categorized and works |
+| 1 | v1.x | Local-only PWA MVP, polished from the v0.1.x prototype |
 | 2 | v2.x | Cognito login (shared pool) + SAM backend + cloud sync |
 | 3 | v3.x | Forge ↔ Atomic sync via EventBridge |
-| 4 | v4.x | Orbits, States, reminders (Scheduler + Web Push) |
+| 4 | v4.x | Flow states, time blocks that switch them, reminders (Scheduler + Web Push) |
 | 5 | v5.x | Monitoring, weekly review, Bedrock suggestions |
+
+## Product & UI Rules (owner feedback, v0.1.2)
+- **Plain words only.** No abbreviations (write "Tuesday", "3 times a week", "low energy", "5-day streak"), no ASCII progress bars, no science-themed names in the UI. Screens: TODAY, HABITS, CATEGORIES, SETTINGS.
+- **Checked items stay visible** on Today, marked `[✓]` and crossed out, in their original place. Nothing jumps away or hides in a collapsed list.
+- **Today sections, in order:** SCHEDULE (time blocks), DAILY, WEEKLY (certain weekdays or N times a week), MONTHLY (a day of the month or N times a month), ONE-TIME (tasks), LISTS. Empty sections are hidden.
+- **Item types:** one-time task, habit, time block, list. The quick-add bar understands (`?` button shows all of it):
+  - `#category` or `#category/subcategory`, where an unknown tag creates the category
+  - full or short day names, `daily`, `weekdays`, `3x a week`, `weekly`, `2x a month`, `monthly`, `monthly 1st`, `x8` (counter), `today`/`tomorrow`, `!low`/`!high`
+  - `#timeblock work 5 pm - 11pm`, where several blocks can be separated by commas; any clear time range like `movie 5pm-8pm` also becomes a block, and `work 9am-5pm weekdays` repeats
+  - `#list groceries: eggs, soap, juice`, where each item gets a checkbox, the list is crossed out automatically when every item is checked, and adding to an open list with the same name appends items
+- Time blocks have no checkbox. They show NOW while running and dim once past.
 
 ## Live Deployment
 - **Repo:** `github.com/peterkeremwest/Atomic---Habit-Tracker`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").
