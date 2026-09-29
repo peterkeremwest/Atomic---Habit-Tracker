@@ -108,8 +108,38 @@ function listCard(l, k, just, drag = true) {
   </div>`;
 }
 
+// Expense list: every cost with its amount, then the total and a bar showing each cost's share of it.
+const SHADES = [1, .55, .3, .78, .42];
+const shade = i => `rgba(var(--fg-rgb), ${SHADES[i % SHADES.length]})`;
+function expenseCard(l, k, just, drag = true) {
+  const total = M.expenseTotal(l);
+  const paid = !!l.completedOn;
+  const n = l.items.length;
+  const pct = c => total > 0 ? Math.round((c / total) * 100) : 0;
+  const bar = total > 0 ? `<div class="expbar" role="img" aria-label="${esc(l.items.map(i => `${i.text} ${pct(i.cents)} percent`).join(', '))}">
+      ${l.items.map((i, j) => i.cents > 0 ? `<i style="flex-grow:${i.cents};background:${shade(j)}" title="${esc(M.costLine(i))}"></i>` : '').join('')}</div>` : '';
+  return `<div class="listcard expcard ${paid ? 'done' : ''} ${just === l.id ? 'just' : ''}" data-atom="${l.id}">
+    <div class="row ${paid ? 'done' : ''}" data-atom="${l.id}">
+      <button class="chk vt" data-action="toggle" data-id="${l.id}" aria-label="${paid ? 'Mark not paid:' : 'Mark paid:'} ${esc(l.title)}" aria-pressed="${paid}">[<span class="mark">${paid ? '✓' : '&nbsp;'}</span>]</button>
+      <div class="body">
+        <button class="title" data-action="edit" data-id="${l.id}">${l.focusOn === k ? '<span class="pin vt">★</span> ' : ''}${esc(l.title)}</button>
+        <div class="meta">${catLabel(l)}<span>${n} cost${n === 1 ? '' : 's'}</span>${paid ? `<span>paid ${M.relativeDay(l.completedOn, M.todayKey())}</span>` : ''}</div>
+      </div>
+      ${handle(l, drag)}
+      <button class="more" data-action="menu" data-id="${l.id}" aria-label="More options for ${esc(l.title)}">⋯</button>
+    </div>
+    <ul class="costs">${l.items.map((i, j) => `<li>
+      <i class="sw" style="background:${shade(j)}" aria-hidden="true"></i><span class="itxt">${esc(i.text)}</span><span class="lead" aria-hidden="true"></span>
+      <span class="amt vt">${M.fmtMoney(i.cents || 0)}</span><span class="share">${pct(i.cents)}%</span></li>`).join('')}
+    </ul>
+    <div class="exptotal"><span class="vt">TOTAL</span><span class="vt glow">${M.fmtMoney(total)}</span></div>
+    ${bar}
+    ${paid ? '' : `<form class="additem" data-form="addcost" data-id="${l.id}"><input class="field" name="t" maxlength="120" placeholder="+ add cost, like oil change $30" aria-label="Add cost to ${esc(l.title)}"></form>`}
+  </div>`;
+}
+
 const SECTIONS = [
-  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'],
+  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'], ['expense', 'EXPENSES'],
 ];
 
 export function renderTop() { return dayNav(S.ui.date); }
@@ -151,9 +181,10 @@ export function render({ just } = {}) {
 
   const body = SECTIONS.filter(([key]) => bySection.get(key).length).map(([key, label]) => {
     const list = bySection.get(key);
-    const n = key === 'schedule' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
+    const n = key === 'schedule' ? list.length
+      : key === 'expense' ? `${M.fmtMoney(list.reduce((t, a) => t + M.expenseTotal(a), 0))} total` : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
     let rows = list.map(a => key === 'schedule' ? blockRow(a, k, clash.get(a.id))
-      : a.kind === 'list' ? listCard(a, k, just) : atomRow(a, k, { just })).join('');
+      : a.kind === 'list' ? listCard(a, k, just) : a.kind === 'expense' ? expenseCard(a, k, just) : atomRow(a, k, { just })).join('');
     if (key === 'once' && k === real) {
       const left = leftovers(k).filter(a => a.focusOn !== k).length;
       if (left) rows += `<button class="btn vt moveleft" data-action="moveleft">MOVE ${left} UNFINISHED TO TOMORROW ▶</button>`;

@@ -2,7 +2,7 @@
 // Every record is "sync-ready": permanent id, sourceApp, createdAt, updatedAt, soft-delete deletedAt.
 //
 // Internal names vs what the app shows:
-//   atom (record)  -> an "item": kind 'task' (one-time) | 'habit' | 'block' (time block) | 'list'
+//   atom (record)  -> an "item": kind 'task' (one-time) | 'habit' | 'block' (time block) | 'list' | 'expense' (expense list)
 //   element (store)-> a "category" (shown as #name)
 //   isotope (store)-> a "subcategory"
 
@@ -93,6 +93,7 @@ export function findCategory(tag, elements) {
 // task:  dueDate | null, completedOn | null
 // block: start 'HH:MM', end 'HH:MM', date | null, repeat null | {type:'daily'|'days'}
 // list:  items [{ id, text, done }], completedOn set automatically when every item is checked
+// expense: items [{ id, text, cents }] (whole cents, so totals never drift), completedOn = the day it was marked paid
 export function makeAtom(f) {
   const kind = f.kind || 'task';
   return newRecord('atom', {
@@ -107,7 +108,8 @@ export function makeAtom(f) {
     date: kind === 'block' ? (f.repeat ? null : (f.date || todayKey())) : null,
     start: kind === 'block' ? f.start : null,
     end: kind === 'block' ? f.end : null,
-    items: kind === 'list' || kind === 'task' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t)) : null,
+    items: kind === 'list' || kind === 'task' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t))
+      : kind === 'expense' ? (f.items || []).map(t => ({ id: t.id || uid('li'), text: t.text, cents: t.cents || 0 })) : null,
     completedOn: null,
     energy: f.energy || null,
     focusOn: null,
@@ -121,6 +123,7 @@ export const logId = (atomId, date) => `${atomId}|${date}`;
 export function frequency(a) {
   if (a.kind === 'block') return 'schedule';
   if (a.kind === 'list') return 'list';
+  if (a.kind === 'expense') return 'expense';
   if (a.kind === 'task') return 'once';
   const t = a.repeat?.type;
   if (t === 'days' || t === 'perWeek') return 'weekly';
@@ -167,7 +170,7 @@ export function showsOn(a, logsByDate, k, today = todayKey()) {
     if (k < today) return a.completedOn === k || (a.dueDate === k && (!a.completedOn || a.completedOn >= k));
     return a.dueDate === k;
   }
-  if (a.kind === 'list') {
+  if (a.kind === 'list' || a.kind === 'expense') {
     if (k === today) return a.completedOn ? a.completedOn === k : true;
     return k < today && a.completedOn === k;
   }
@@ -206,16 +209,16 @@ export function relativeDay(k, today = todayKey()) {
 
 // 'done' | 'partial' | 'skipped' | 'met' (weekly/monthly quota already reached) | null
 export function statusFor(a, logsByDate, k) {
-  if (a.kind === 'task' || a.kind === 'list') return a.completedOn ? 'done' : null;
+  if (a.kind === 'task' || a.kind === 'list' || a.kind === 'expense') return a.completedOn ? 'done' : null;
   if (a.kind === 'block') return null;
   const s = logsByDate.get(k)?.status || null;
   if (s) return s;
   return quotaMet(a, logsByDate, k) ? 'met' : null;
 }
 
-// Counts toward today's progress? (time blocks and already-met quotas don't)
+// Counts toward today's progress? (time blocks, expense lists and already-met quotas don't)
 export function countsToday(a, logsByDate, k) {
-  if (a.kind === 'block') return false;
+  if (a.kind === 'block' || a.kind === 'expense') return false;
   const s = statusFor(a, logsByDate, k);
   return s !== 'met' && s !== 'skipped';
 }
@@ -323,6 +326,7 @@ function takeTags(text) {
     if (['list', 'checklist'].includes(l)) { special.add('list'); return ' '; }
     if (['timeblock', 'block', 'tb', 'schedule'].includes(l)) { special.add('block'); return ' '; }
     if (['onetime', 'once', 'task', 'todo'].includes(l)) { special.add('task'); return ' '; }
+    if (['expense', 'expenses', 'cost', 'costs'].includes(l)) { special.add('expense'); return ' '; }
     if (['daily', 'weekly', 'monthly', 'weekdays', 'weekends'].includes(l)) return ` ${l} `;
     if (l === 'habit') { special.add('habit'); return ' '; }
     tags.push({ name, sub: sub ? sub.trim() : null });
@@ -385,6 +389,14 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
     if (ci >= 0) { title = clean(body.slice(0, ci)); items = body.slice(ci + 1).split(/[,;\n]/).map(clean).filter(Boolean); }
     else { const parts = body.split(/[,;\n]/).map(clean).filter(Boolean); title = parts.length > 1 ? 'List' : (parts[0] || 'List'); items = parts.length > 1 ? parts : []; }
     return [{ ...base, kind: 'list', title: title || 'List', items }];
+  }
+
+  // ----- expense list: "#expense car repair: tires $10 brakes $50 labor $40", or any "title: thing $amount" -----
+  const colon = body.match(/^([^:]*):\s*([\s\S]+)$/);
+  if (special.has('expense') || (colon && HAS_MONEY.test(colon[2]))) {
+    const title = colon ? clean(colon[1]) : '';
+    const items = parseCosts(colon ? colon[2] : body);
+    return [{ ...base, kind: 'expense', title: title || 'Expenses', items }];
   }
 
   // ----- time blocks (explicit #timeblock, or any clear time range like 5pm-8pm) -----
@@ -464,6 +476,39 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   if (steps) { if (out.kind === 'task') out.items = steps; else out.note = steps.join(', '); }
   return [out];
 }
+
+// ---------- money (expense lists) ----------
+// an amount: "$10", "$1,200.50", "10$", "10 dollars", "10 bucks"
+const AMOUNT = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)|(\d[\d,]*(?:\.\d{1,2})?)\s*(?:\$|dollars?\b|bucks\b)/i;
+const HAS_MONEY = new RegExp(AMOUNT.source, 'i');
+const toCents = s => Math.round(parseFloat(String(s).replace(/,/g, '')) * 100) || 0;
+const costText = s => clean(s).replace(/^(and|&|plus|\+)\s+/i, '').replace(/\s+(and|&|plus|for|on)$/i, '');
+
+// one line or segment can hold several costs: "tires $10 brakes $50 labor $40"
+// loose = a bare trailing number counts as the amount too ("oil change 30")
+export function parseCostLine(seg, { loose = true } = {}) {
+  const out = [], re = new RegExp(AMOUNT.source, 'gi');
+  let last = 0, m;
+  while ((m = re.exec(seg))) { out.push({ text: costText(seg.slice(last, m.index)), cents: toCents(m[1] || m[2]) }); last = re.lastIndex; }
+  const tail = costText(seg.slice(last));
+  if (!out.length) {
+    if (!tail) return [];
+    const n = loose && tail.match(/^(.*?\D)\s*(\d[\d,]*(?:\.\d{1,2})?)$/);
+    return [n ? { text: costText(n[1]), cents: toCents(n[2]) } : { text: tail, cents: 0 }];
+  }
+  if (tail) { if (!out[out.length - 1].text) out[out.length - 1].text = tail; else out.push({ text: tail, cents: 0 }); }
+  return out.map(i => ({ ...i, text: i.text || 'Cost' }));
+}
+// commas, semicolons and new lines separate costs (but not the comma in "$1,200")
+export const parseCosts = str => String(str).split(/\s*(?:;|\n|,(?!\d{3}(?!\d)))\s*/).flatMap(seg => parseCostLine(seg));
+
+export const expenseTotal = a => (a.items || []).reduce((n, i) => n + (i.cents || 0), 0);
+export function fmtMoney(cents) {
+  const neg = cents < 0, v = Math.abs(cents) / 100;
+  const s = Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (neg ? '-$' : '$') + s;
+}
+export const costLine = i => `${i.text} ${fmtMoney(i.cents || 0)}`;
 
 // ---------- time block clashes ----------
 const mins = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };

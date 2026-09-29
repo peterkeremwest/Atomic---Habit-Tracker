@@ -94,7 +94,7 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 - Workflow used: build + test in the cloud workspace, write files into this folder, then commit + push from `device_bash`.
 
 ### Hosting
-- **Frontend: Cloudflare Workers + Static Assets**, deployed by **Workers Builds** (Git integration): push to `main` → automatic publish. Config: `wrangler.jsonc` at repo root (Worker name `atomic`, which must match the dashboard). **Only `public/` is served**, so all app files go there and CLAUDE.md, checkpoints and the backend stay private. Pages is not used (Cloudflare recommends Workers for new projects). Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
+- **Frontend: Cloudflare Workers + Static Assets**, deployed by **Workers Builds** (Git integration): push to `main` → automatic publish. Config: `wrangler.jsonc` at repo root (Worker name `app`, which must match the dashboard). **Only `public/` is served**, so all app files go there and CLAUDE.md, checkpoints and the backend stay private. Pages is not used (Cloudflare recommends Workers for new projects). Separate from Forge's Netlify site, so Atomic pushes never trigger a Forge deploy.
 - **Backend stays on AWS** (`us-east-1`). The Cloudflare URL must be listed as an allowed origin in the Atomic API's CORS settings (Phase 2).
 
 ### Backend (Phase 2+), a SAM stack like Forge's
@@ -155,8 +155,8 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 
 ## Live Deployment
 - **Repo:** `github.com/peterkeremwest/Atomic---Habit-Tracker`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").
-- **Host:** Cloudflare Worker `atomic` via Workers Builds, connected 2026-09-29. Production branch `main`; preview builds enabled for other branches.
-- **Live URL:** https://atomic.peterkeremwest.workers.dev. Verified 2026-09-29: the placeholder page loads, and `/CLAUDE.md` falls back to the app page instead of exposing the file (only `public/` is served).
+- **Host:** Cloudflare Worker `app` (renamed from `atomic` 2026-09-29) on account subdomain `atomicapp` (was `peterkeremwest`), via Workers Builds, connected 2026-09-29. Production branch `main`; preview builds enabled for other branches.
+- **Live URL:** https://app.atomicapp.workers.dev (changed 2026-09-29; the old `atomic.peterkeremwest.workers.dev` address no longer works). Earlier check (old address, 2026-09-29): the placeholder page loaded, and `/CLAUDE.md` falls back to the app page instead of exposing the file (only `public/` is served).
 - **Deploy timing:** a Workers Build takes about 3 minutes after a push. Check its status without credentials (the repo is public): `curl -s https://api.github.com/repos/peterkeremwest/Atomic---Habit-Tracker/commits/<sha>/check-runs` shows "Workers Builds: atomic" as `completed success`. Only then load the site with a cache-busting query (`/?v=N`).
 - **How to verify the live site:** neither `device_bash` nor the cloud shell can reach `*.workers.dev` (both proxies refuse it). Use the built-in browser pane (site access already granted), or ask the owner to check.
 - **Git from `device_bash`:** use Forge's proven pattern. `credential.helper` is set repo-locally to `store --file=.git-credentials`, and `.git-credentials` stays in `.gitignore` (never committed). It uses the same fine-grained PAT as Forge (renamed, and granted access to this repo on 2026-09-29). The file was copied from Forge's repo. If push/pull fails, check that `.git-credentials` exists here and that the PAT hasn't expired (it has a 90-day expiry, set up 2026-09-18). Never assume a push succeeded without checking `git status`/`git log origin/main`.

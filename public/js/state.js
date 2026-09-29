@@ -118,6 +118,10 @@ export async function toggle(atomId, date = M.todayKey()) {
     return updateAtom(atomId, { items, completedOn: !allDone && items.length ? date : null });
   }
   if (a.kind === 'block') return;
+  if (a.kind === 'expense') { // the checkbox marks the whole expense list as paid
+    const today = M.todayKey();
+    return updateAtom(atomId, { completedOn: a.completedOn ? null : (date > today ? today : date) });
+  }
   if (a.kind === 'task') {
     const doneNow = !a.completedOn;
     if (date > M.todayKey()) date = M.todayKey(); // finishing a future task early counts as done today
@@ -228,6 +232,14 @@ export async function removeListItem(atomId, itemId) {
   return updateAtom(atomId, { items, completedOn: all ? (a.completedOn || M.todayKey()) : null });
 }
 
+// ---------- expense lists ----------
+export async function addCosts(atomId, costs) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const add = costs.filter(c => c.text).map(c => ({ id: M.uid('li'), text: c.text, cents: c.cents || 0 }));
+  if (!add.length) return;
+  return updateAtom(atomId, { items: [...a.items, ...add] });
+}
+
 // ---------- quick add (handles new categories, lists that already exist, several time blocks) ----------
 export async function addParsed(parsedList) {
   const made = [];
@@ -245,6 +257,10 @@ export async function addParsed(parsedList) {
     if (f.kind === 'list') {
       const open = live(S.atoms).find(a => a.kind === 'list' && !a.completedOn && a.title.toLowerCase() === f.title.toLowerCase());
       if (open) { await addListItems(open.id, f.items); made.push({ ...open, appended: f.items.length }); continue; }
+    }
+    if (f.kind === 'expense') {
+      const open = live(S.atoms).find(a => a.kind === 'expense' && !a.completedOn && a.title.toLowerCase() === f.title.toLowerCase());
+      if (open) { await addCosts(open.id, f.items); made.push({ ...S.atoms.find(a => a.id === open.id), appended: f.items.length }); continue; }
     }
     if (!f.title) continue;
     made.push(await addAtom(f));

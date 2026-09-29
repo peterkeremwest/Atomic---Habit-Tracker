@@ -26,12 +26,12 @@ export function openEditor(atomId = null, preset = {}) {
   const bDays = v.kind === 'block' && v.repeat?.type === 'days' ? v.repeat.days : [1, 2, 3, 4, 5];
   const bRep = v.kind === 'block' ? (v.repeat ? (v.repeat.type === 'daily' ? 'daily' : 'days') : 'once') : 'once';
   const isoOpts = elId => `<option value="">none</option>` + (elId ? isotopesOf(elId).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('') : '');
-  const itemsText = (v.items || []).map(i => (typeof i === 'string' ? i : i.text)).join('\n');
+  const itemsText = (v.items || []).map(i => (typeof i === 'string' ? i : v.kind === 'expense' ? M.costLine(i) : i.text)).join('\n');
 
   openSheet(`<h2>${a ? 'EDIT' : 'NEW'}</h2>
   <form class="form" id="atomForm" autocomplete="off">
     <label>TYPE</label>
-    <div class="seg">${radio('kind', 'task', 'ONE-TIME', v.kind === 'task')}${radio('kind', 'habit', 'HABIT', v.kind === 'habit')}${radio('kind', 'block', 'TIME BLOCK', v.kind === 'block')}${radio('kind', 'list', 'LIST', v.kind === 'list')}</div>
+    <div class="seg">${radio('kind', 'task', 'ONE-TIME', v.kind === 'task')}${radio('kind', 'habit', 'HABIT', v.kind === 'habit')}${radio('kind', 'block', 'TIME BLOCK', v.kind === 'block')}${radio('kind', 'list', 'LIST', v.kind === 'list')}${radio('kind', 'expense', 'EXPENSES', v.kind === 'expense')}</div>
     <label for="f-title">TITLE</label>
     <input class="field" id="f-title" name="title" maxlength="120" required value="${esc(v.title)}">
     <label for="f-el">CATEGORY</label>
@@ -78,12 +78,12 @@ export function openEditor(atomId = null, preset = {}) {
       <div class="seg" data-show-b="days" style="margin-top:8px">${dayBoxes('bdays', bDays)}</div>
     </div>
 
-    <div data-show="list task">
-      <label for="f-items"><span data-lbl="list">ITEMS</span><span data-lbl="task">STEPS (optional)</span> — one per line</label>
+    <div data-show="list task expense">
+      <label for="f-items"><span data-lbl="list">ITEMS — one per line</span><span data-lbl="task">STEPS (optional) — one per line</span><span data-lbl="expense">COSTS — one per line, like tires $10</span></label>
       <textarea class="field" id="f-items" name="items" rows="5" maxlength="2000">${esc(itemsText)}</textarea>
     </div>
 
-    <div data-show-not="block list">
+    <div data-show-not="block list expense">
       <label>ENERGY NEEDED</label>
       <div class="seg">${radio('energy', '', 'ANY', !v.energy)}${radio('energy', 'low', 'LOW', v.energy === 'low')}${radio('energy', 'high', 'HIGH', v.energy === 'high')}</div>
     </div>
@@ -123,7 +123,7 @@ export function openEditor(atomId = null, preset = {}) {
       const data = {
         title: f.title.value.trim(), kind,
         elementId: f.elementId.value || null, isotopeId: f.isotopeId.value || null,
-        energy: kind === 'block' || kind === 'list' ? null : (f.energy.value || null),
+        energy: ['block', 'list', 'expense'].includes(kind) ? null : (f.energy.value || null),
         note: f.note.value.trim(),
         repeat: null, target: { kind: 'check' }, dueDate: null, date: null, start: null, end: null,
       };
@@ -154,6 +154,12 @@ export function openEditor(atomId = null, preset = {}) {
           data.repeat = ds.length === 7 ? { type: 'daily' } : { type: 'days', days: ds };
         }
       }
+      if (kind === 'expense') {
+        const old = a?.kind === 'expense' ? a.items : [];
+        data.items = f.items.value.split('\n').flatMap(line => M.parseCostLine(line.trim()))
+          .map(c => ({ ...c, id: (old.find(i => i.text === c.text) || {}).id || M.uid('li') }));
+        data.completedOn = a?.kind === 'expense' ? a.completedOn : null;
+      }
       if (kind === 'list' || kind === 'task') {
         const lines = f.items.value.split('\n').map(s => s.trim()).filter(Boolean);
         const old = (a?.items || []);
@@ -183,6 +189,8 @@ export function openMenu(atomId) {
   if (a.kind === 'task') {
     items.push(['toggle', a.completedOn ? 'Mark not done' : 'Mark done']);
     if (!a.completedOn) items.push(['snooze', 'Move to tomorrow']);
+  } else if (a.kind === 'expense') {
+    items.push(['toggle', a.completedOn ? 'Mark not paid' : 'Mark paid']);
   } else if (a.kind === 'list') {
     items.push(['toggle', a.completedOn ? 'Uncheck everything' : 'Check everything']);
     if (a.items.some(i => i.done)) items.push(['cleardone', 'Remove checked items']);
@@ -272,7 +280,9 @@ export function openHelp() {
       ${ex('#timeblock date 2pm-7pm, movie 5pm-8pm', 'several time blocks')}
       ${ex('work 9am-5pm weekdays', 'repeating time block')}
       ${ex('#list groceries: eggs, soap, juice', 'checklist')}
-      <p class="dim">adding to a list that's still open adds the new items to it.</p>
+      ${ex('car repair: tires $10, brakes $50', 'expense list with a total')}
+      ${ex('#expense lunch $12', 'adds a cost to your Expenses list')}
+      <p class="dim">adding to a list that's still open adds the new items to it. the same goes for expense lists.</p>
       <div class="actions"><button class="btn solid vt" data-x="ok">GOT IT</button></div>
     </div>`, root => { root.querySelector('[data-x="ok"]').onclick = closeSheet; });
 }
@@ -283,7 +293,7 @@ export function openSearch(onPick) {
     <input class="field" id="q-search" type="search" placeholder="search titles, steps, list items, notes…" aria-label="Search" autocomplete="off">
     <div id="q-results" class="results" role="list"></div>`, root => {
     const input = root.querySelector('#q-search'), out = root.querySelector('#q-results');
-    const kindName = { task: 'one-time', habit: 'habit', block: 'time block', list: 'list' };
+    const kindName = { task: 'one-time', habit: 'habit', block: 'time block', list: 'list', expense: 'expense list' };
     const run = () => {
       const q = input.value.trim().toLowerCase();
       if (!q) { out.innerHTML = '<p class="dim" style="font-size:13px">start typing.</p>'; return; }
@@ -292,7 +302,7 @@ export function openSearch(onPick) {
         const el = A.elementById(a.elementId);
         const when = a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
           : a.kind === 'block' ? (a.date ? `${M.shortDate(a.date)} ${M.fmtTime(a.start)}` : `${M.describeRepeat(a)} ${M.fmtTime(a.start)}`)
-          : a.kind === 'habit' ? M.describeRepeat(a) : a.completedOn ? `finished ${M.shortDate(a.completedOn)}` : 'open';
+          : a.kind === 'habit' ? M.describeRepeat(a) : a.kind === 'expense' ? `total ${M.fmtMoney(M.expenseTotal(a))}${a.completedOn ? ' · paid ' + M.shortDate(a.completedOn) : ''}` : a.completedOn ? `finished ${M.shortDate(a.completedOn)}` : 'open';
         return `<button class="hit" data-id="${a.id}" role="listitem"><span>${esc(a.title)}</span>
           <small>${kindName[a.kind]}${el && !el.deletedAt ? ' · ' + esc(M.tagOf(el.name)) : ''} · ${esc(when)}</small></button>`;
       }).join('') : '<p class="dim">no matches.</p>';
@@ -304,7 +314,7 @@ export function openSearch(onPick) {
       closeSheet();
       const today = M.todayKey();
       const date = a.kind === 'task' ? (a.completedOn || (a.dueDate && a.dueDate > today ? a.dueDate : today))
-        : a.kind === 'block' ? a.date : a.kind === 'list' ? (a.completedOn || today) : null;
+        : a.kind === 'block' ? a.date : ['list', 'expense'].includes(a.kind) ? (a.completedOn || today) : null;
       onPick(a, date);
     });
     run(); setTimeout(() => input.focus(), 50);

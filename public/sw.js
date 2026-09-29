@@ -1,7 +1,7 @@
 // Atomic service worker ("the receptionist's shelf of photocopies").
 // App code is fetched NETWORK-FIRST so a new deploy shows on the first reload (Forge lesson);
 // the shelf copy is only used when offline. Fonts and icons are cache-first (they never change per version).
-const CACHE = 'atomic-v0.1.5';
+const CACHE = 'atomic-v0.2.1';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/theme.css',
   './js/app.js', './js/state.js', './js/db.js', './js/model.js', './js/ui.js', './js/version.js',

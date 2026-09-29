@@ -125,3 +125,21 @@ console.log('model tests passed');
   assert.equal(r.slipped.length, 1); assert.equal(r.total, 4); assert.equal(r.done, 2);
   console.log('v0.1.5 model tests passed');
 }
+
+// ---------- v0.2.1: expense lists ----------
+{
+  const q = t => M.parseQuickAdd(t, [], [], '2026-09-29')[0];
+  let x = q('car repair : tires $10 brakes $50 labor $40');
+  assert.equal(x.kind, 'expense'); assert.equal(x.title, 'car repair');
+  assert.deepEqual(x.items.map(i => [i.text, i.cents]), [['tires', 1000], ['brakes', 5000], ['labor', 4000]]);
+  assert.equal(M.expenseTotal(x), 10000); assert.equal(M.fmtMoney(M.expenseTotal(x)), '$100');
+  x = q('#expense trip: gas 40, hotel $120.99 and food $60');
+  assert.deepEqual(x.items.map(i => [i.text, i.cents]), [['gas', 4000], ['hotel', 12099], ['food', 6000]]);
+  assert.equal(M.fmtMoney(M.expenseTotal(x)), '$220.99');
+  x = q('#expenses rent $1,200'); assert.equal(x.title, 'Expenses'); assert.equal(x.items[0].cents, 120000); assert.equal(x.newCategory, null);
+  x = q('move out: pack, clean'); assert.equal(x.kind, 'task'); // no money -> still task steps
+  const a = M.makeAtom({ kind: 'expense', title: 'car', items: [{ text: 'tires', cents: 1000 }] });
+  assert.equal(M.frequency(a), 'expense'); assert.equal(M.countsToday(a, new Map(), '2026-09-29'), false);
+  assert.ok(a.items[0].id);
+  console.log('v0.2.1 expense tests passed');
+}

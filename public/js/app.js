@@ -111,6 +111,7 @@ const actions = {
     const before = M.statusFor(a, A.logsFor(a.id), k);
     await A.undoable('check', () => A.toggle(d.id, k));
     const after = M.statusFor(S.atoms.find(x => x.id === d.id), A.logsFor(d.id), k);
+    if (a.kind === 'expense') return toast(`${after === 'done' ? 'marked paid' : 'marked not paid'} · ${a.title}`, { undo: true });
     toast(after === 'done' && before !== 'done' ? `checked · ${a.title}` : a.target?.kind === 'count' ? `${A.logsFor(d.id).get(k)?.count || 0} of ${a.target.goal}` : `unchecked · ${a.title}`, { undo: true });
   },
   async moveleft() {
@@ -208,6 +209,13 @@ main.addEventListener('submit', async e => {
     const err = A.validCategoryName(f.t.value); if (err) return toast(err);
     const e = await A.addCategory(f.t.value); toast(`${M.tagOf(e.name)} added`);
   }
+  if (f.dataset.form === 'addcost') {
+    const costs = M.parseCosts(f.t.value.trim()); if (!costs.length) return;
+    await A.undoable('addcost', () => A.addCosts(f.dataset.id, costs));
+    const a = S.atoms.find(x => x.id === f.dataset.id);
+    toast(`${costs.length === 1 ? 'cost' : costs.length + ' costs'} added · total ${M.fmtMoney(M.expenseTotal(a))}`, { undo: true });
+    setTimeout(() => main.querySelector(`form[data-form=addcost][data-id="${f.dataset.id}"] input`)?.focus(), 0);
+  }
   if (f.dataset.form === 'additem') {
     const text = f.t.value.trim(); if (!text) return;
     await A.addListItems(f.dataset.id, text.split(',')); 
@@ -230,7 +238,8 @@ quick.querySelector('form').addEventListener('submit', async e => {
   const made = await A.undoable('add', () => A.addParsed(parsed));
   input.value = '';
   const first = made[0] || {};
-  const what = first.appended ? `added ${first.appended} item${first.appended === 1 ? '' : 's'} to ${first.title}`
+  const what = first.kind === 'expense' ? (first.appended ? `added ${first.appended} cost${first.appended === 1 ? '' : 's'} to ${first.title}` : `expense list added`) + ` · total ${M.fmtMoney(M.expenseTotal(first))}`
+    : first.appended ? `added ${first.appended} item${first.appended === 1 ? '' : 's'} to ${first.title}`
     : made.length > 1 ? `${made.length} time blocks added`
     : first.kind === 'habit' ? `habit added · ${M.describeRepeat(first)}`
     : first.kind === 'block' ? `time block added · ${M.fmtTime(first.start)}–${M.fmtTime(first.end)}`

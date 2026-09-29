@@ -33,11 +33,11 @@ export function closeSheet() {
   if (d.open) d.close();
 }
 
-// Foldable section: tapping the header folds it; the "//" tips over flat while folded.
+// Foldable section: tapping the header folds it; the "//" tips over and lies flat as "=" while folded.
 export function foldSection(key, label, count, inner, folded) {
   return `<section class="sec ${folded ? 'folded' : ''}" data-sec="${key}">
     <button class="section vt" data-action="fold" data-sec="${key}" aria-expanded="${!folded}">
-      <span><span class="slashes" aria-hidden="true"><i>/</i><i>/</i></span> ${label}</span><span>${count}</span></button>
+      <span><span class="slashes" aria-hidden="true"><i></i><i></i></span> ${label}</span><span>${count}</span></button>
     <div class="secbody"><div class="secinner">${inner}</div></div>
   </section>`;
 }

@@ -143,6 +143,35 @@ async def main():
         # review
         await pg.click('nav a[data-route=calendar]'); await pg.click('[data-action=review]'); await pg.wait_for_selector('.review')
         await pg.screenshot(path=OUT + '15-review.png', full_page=True)
+        # ----- v0.2.1: expense lists + flat folded slashes -----
+        await pg.goto(URL + '#/today'); await pg.wait_for_selector('.sec')
+        print(await add(pg, 'car repair : tires $10 brakes $50 labor $40 #car'))
+        ec = pg.locator('.expcard', has_text='car repair')
+        assert await ec.locator('.costs li').count() == 3
+        tot = await ec.locator('.exptotal').inner_text(); print('total', tot.replace('\n', ' ')); assert '$100' in tot
+        assert await ec.locator('.expbar i').count() == 3
+        await ec.locator('.additem input').fill('oil change $30'); await ec.locator('.additem input').press('Enter'); await pg.wait_for_timeout(200)
+        assert '$130' in await pg.locator('.expcard', has_text='car repair').locator('.exptotal').inner_text()
+        print(await add(pg, 'car repair: wipers $20'))
+        assert '$150' in await pg.locator('.expcard', has_text='car repair').locator('.exptotal').inner_text(), 'appends to open expense list'
+        print('expense section', (await pg.locator('section[data-sec="today:expense"] > .section').inner_text()).replace('\n', ' '))
+        await pg.locator('.expcard', has_text='car repair').scroll_into_view_if_needed()
+        await pg.locator('section[data-sec="today:expense"]').screenshot(path=OUT + '16-expense.png')
+        await pg.locator('.expcard', has_text='car repair').locator('.row .chk').click(); await pg.wait_for_timeout(200)
+        assert 'done' in await pg.locator('.expcard', has_text='car repair').get_attribute('class'), 'marked paid'
+        await pg.click('#toast .undo'); await pg.wait_for_timeout(250)
+        # editor keeps amounts
+        await pg.locator('.expcard .title', has_text='car repair').click(); await pg.wait_for_selector('dialog[open] #atomForm')
+        txt = await pg.locator('#f-items').input_value(); print('editor costs', repr(txt)); assert 'tires $10' in txt
+        await pg.fill('#f-items', txt + '\nfilter $15'); await pg.click('dialog button[type=submit]'); await pg.wait_for_timeout(250)
+        assert '$165' in await pg.locator('.expcard', has_text='car repair').locator('.exptotal').inner_text()
+        # folded slashes lie flat (both bars at 90 degrees)
+        await pg.click('section[data-sec="today:expense"] > button.section'); await pg.wait_for_timeout(600)
+        ang = await pg.evaluate("""[...document.querySelectorAll('section[data-sec="today:expense"] .slashes i')].map(i => { const m = new DOMMatrix(getComputedStyle(i).transform); return Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI); })""")
+        print('folded angles', ang); assert ang == [90, 90]
+        await pg.locator('section[data-sec="today:expense"] > button.section').screenshot(path=OUT + '17-folded-flat.png')
+        await pg.locator('section[data-sec="today:expense"] > button.section').dispatch_event('click'); await pg.wait_for_timeout(500)
+        await pg.locator('section[data-sec="today:expense"] > button.section').screenshot(path=OUT + '18-open-slashes.png')
         # ----- dates -----
         await pg.goto(URL + '#/today'); await pg.wait_for_selector('.daynav')
         today_label = await pg.locator('.daynav .dlabel').inner_text()

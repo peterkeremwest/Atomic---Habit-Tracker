@@ -245,12 +245,14 @@ main { padding-top: 8px; padding-bottom: calc(90px + env(safe-area-inset-bottom)
 .sec { margin: 0; }
 button.section { width: 100%; text-align: left; font: inherit; font-family: 'VT323', monospace; font-size: 22px; cursor: pointer; }
 button.section:active { color: var(--fg); }
-.slashes { display: inline-flex; color: inherit; transition: color .28s; }
-.slashes i { font-style: normal; display: inline-block; transition: transform .3s cubic-bezier(.3, 1.5, .5, 1); transform-origin: 50% 55%; }
-.slashes i + i { transition-delay: .05s; }
+/* v0.2.1: the two slashes are drawn as bars (not text), so folded they lie exactly flat: // becomes = */
+.slashes { display: inline-block; position: relative; width: .62em; height: .72em; margin-right: .1em; vertical-align: -.02em; color: inherit; transition: color .28s; }
+.slashes i { position: absolute; left: calc(50% - 1px); top: 0; width: 2px; height: 100%; background: currentColor;
+  transition: transform .32s cubic-bezier(.3, 1.4, .5, 1); transform: translateX(-.15em) rotate(24deg); }
+.slashes i + i { transform: translateX(.15em) rotate(24deg); transition-delay: .05s; }
 .sec.folded .slashes { color: var(--fg); }
-.sec.folded .slashes i:first-child { transform: translate(4px, -4px) rotate(60deg); }
-.sec.folded .slashes i + i { transform: translate(-4px, 4px) rotate(60deg); } /* each slash tips over flat: // becomes -- */
+.sec.folded .slashes i:first-child { transform: translateY(-.13em) rotate(90deg); }
+.sec.folded .slashes i + i { transform: translateY(.13em) rotate(90deg); }
 .sec.folded > button.section { color: var(--fg); }
 .secbody { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .28s ease, opacity .28s ease; }
 .sec.folded .secbody { grid-template-rows: 0fr; opacity: 0; }
@@ -289,3 +291,19 @@ header.top { align-items: center; }
 .dnum { font-family: 'VT323', monospace; font-size: 16px; }
 .review .kv span:last-child { text-align: right; }
 a.btn { text-decoration: none; display: inline-block; }
+
+/* ---------- v0.2.1: expense lists (each cost, the total, and a bar of who took what share) ---------- */
+.costs { list-style: none; margin: 6px 0 0; padding: 0 0 0 8px; }
+.costs li { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; font-size: 15px; }
+.costs .sw { flex: none; width: 8px; height: 8px; align-self: center; }
+.costs .itxt { min-width: 0; overflow-wrap: anywhere; }
+.costs .lead { flex: 1; min-width: 12px; border-bottom: 1px dotted var(--faint); transform: translateY(-4px); }
+.costs .amt { font-size: 20px; }
+.costs .share { width: 3.2em; text-align: right; font-size: 12px; color: var(--muted); }
+.exptotal { display: flex; justify-content: space-between; align-items: baseline; margin: 6px 0 0 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+.exptotal span:first-child { color: var(--muted); font-size: 18px; letter-spacing: 1px; }
+.exptotal span:last-child { font-size: 32px; line-height: 1; }
+.expbar { display: flex; gap: 2px; height: 10px; margin: 8px 0 2px 8px; }
+.expbar i { display: block; min-width: 3px; flex-basis: 0; }
+.expcard.done .costs, .expcard.done .exptotal, .expcard.done .expbar { opacity: .55; }
+.expcard.done .exptotal span:last-child { text-shadow: none; }
