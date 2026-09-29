@@ -116,8 +116,9 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 
 ## Live Deployment
 - **Repo:** `github.com/peterkeremwest/Atomic---Habit-Tracker`, its own repo, completely separate from Forge's `workouttracker`. The project folder itself is the repo root (no nested `atomic/` subfolder). It was published through GitHub Desktop ("Add existing repository" → "Publish repository").
-- **Host:** Cloudflare Worker `atomic` via Workers Builds (connection pending).
-- **Live URL:** none yet.
+- **Host:** Cloudflare Worker `atomic` via Workers Builds, connected 2026-09-29. Production branch `main`; preview builds enabled for other branches.
+- **Live URL:** https://atomic.peterkeremwest.workers.dev. Verified 2026-09-29: the placeholder page loads, and `/CLAUDE.md` falls back to the app page instead of exposing the file (only `public/` is served).
+- **How to verify the live site:** neither `device_bash` nor the cloud shell can reach `*.workers.dev` (both proxies refuse it). Use the built-in browser pane (site access already granted), or ask the owner to check.
 - **Git from `device_bash`:** use Forge's proven pattern. `credential.helper` is set repo-locally to `store --file=.git-credentials`, and `.git-credentials` stays in `.gitignore` (never committed). It uses the same fine-grained PAT as Forge (renamed, and granted access to this repo on 2026-09-29). The file was copied from Forge's repo. If push/pull fails, check that `.git-credentials` exists here and that the PAT hasn't expired (it has a 90-day expiry, set up 2026-09-18). Never assume a push succeeded without checking `git status`/`git log origin/main`.
 - **Git lock files from `device_bash`:** the Cowork shell can't delete files in this folder unless deletion is granted for the session. Without it, every git command leaves `.git/index.lock` / `HEAD.lock` behind and the next one fails. Ask for delete permission once per session before running git here, and if a lock is left over, remove `.git/*.lock` (only when no other git process is running).
 - **AWS deploys run from the owner's own terminal, never `device_bash`.** That shell can't reach `amazonaws.com` and has no AWS credentials. Backend deploy (Phase 2+): `cd backend && sam build && sam deploy`.
