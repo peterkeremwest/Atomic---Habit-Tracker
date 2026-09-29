@@ -12,9 +12,10 @@
 - **Chat naming convention (same as Forge):** name a chat `vX.Y : <what's being built>` only when it's clearly implementation work toward the next checkpoint (take `X.Y` from LINEAGE.md). Never version-number chats prefixed `Sidebar:` (tangents), `Meta:` (how we work) or `Scratch:` (throwaway). If a chat is ambiguous, leave it unnumbered.
 
 ## Checkpoint Versioning
-- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1.5_CHECKPOINT.md`** (Phase 0 / initiation complete: first working local-only PWA, live on Cloudflare; covers builds v0.1.1–v0.1.5). Next session: start the AWS back office (checkpoint §6). Ask the owner which version number it gets (suggested `v1.0`).
+- **Source of truth:** the highest-numbered file in `checkpoints/`, by full version number. **Latest active checkpoint: `checkpoints/v0.1.5_CHECKPOINT.md`** (Phase 0 / initiation complete: first working local-only PWA, live on Cloudflare; covers builds v0.1.1–v0.1.5). Next session: start the AWS back office (checkpoint §6) as **v0.2**, with updates numbered `v0.2.1`, `v0.2.2`, … (owner's decision, 2026-09-29).
 - **Version scheme:** major = Phase, minor = each checkpoint cut within that phase (minors don't need to match milestone numbers). A new Phase bumps the major number and resets to `.0`.
   - **Phase 0 exception (owner's decision, 2026-09-29):** while Atomic is in initiation (deciding how everything looks, is categorized and works), updates are numbered with a third digit, `v0.1.x` (v0.1.1, v0.1.2, …). Keep using `v0.1.x` until the owner says initiation is finished. Checkpoint files for these use the same number (e.g. `v0.1.2_CHECKPOINT.md`).
+  - **Owner's decision (2026-09-29):** initiation ended at v0.1.5. The AWS back-office work is **v0.2**, and its updates keep the same three-digit style: `v0.2.1`, `v0.2.2`, …. Each session's work ships as the next `.x`, and a checkpoint is cut when the owner ends the session. Don't jump to `v1.0` unless the owner says so.
 - **When to cut:** on each major milestone or completed feature. Never overwrite a shipped checkpoint. Cut the next one and update the pointer above.
 - **Required contents of each `vX.X_CHECKPOINT.md`:**
   1. Current Phase & Milestone status
@@ -117,7 +118,7 @@ Rows marked † are shared verbatim with Forge's CLAUDE.md. Keep them identical 
 |---|---|---|
 | 0 | v0.1.x | Initiation: planning, repo, stack, and deciding how everything looks, is categorized and works |
 | 1 | v1.x | Local-only PWA MVP, polished from the v0.1.x prototype |
-| 2 | v2.x | Cognito login (shared pool) + SAM backend + cloud sync |
+| 2 | v0.2.x | Cognito login (shared pool) + SAM backend + cloud sync (numbered v0.2.x by owner's choice) |
 | 3 | v3.x | Forge ↔ Atomic sync via EventBridge |
 | 4 | v4.x | Flow states, time blocks that switch them, reminders (Scheduler + Web Push) |
 | 5 | v5.x | Monitoring, weekly review, Bedrock suggestions |
