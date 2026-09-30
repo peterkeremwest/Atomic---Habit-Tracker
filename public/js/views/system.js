@@ -27,7 +27,7 @@ function account() {
 }
 
 export function render({ canInstall }) {
-  const themes = ['green', 'amber', 'red'];
+  const themes = ['green', 'amber', 'red', 'pink'];
   return `<div class="sys">
     <div class="section vt"><span>// ACCOUNT</span></div>
     ${account()}

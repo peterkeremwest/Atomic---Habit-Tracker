@@ -26,6 +26,11 @@
   --fg: #ff4a3d; --fg-rgb: 255, 74, 61; --dim: #b8342b;
   --muted: #735a58; --faint: #3a2524; --warn: #ffb000;
 }
+[data-theme="pink"] {
+  --bg: #0a0408; --panel: #12070f; --line: #36142c;
+  --fg: #ff6ec7; --fg-rgb: 255, 110, 199; --dim: #b84a8c;
+  --muted: #735a69; --faint: #3a2433; --warn: #ffb000;
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
