@@ -9,12 +9,13 @@ import * as Calendar from './views/calendar.js';
 import * as Review from './views/review.js';
 import * as Elements from './views/elements.js';
 import * as System from './views/system.js';
+import * as Notes from './views/notes.js';
 import { openEditor, openMenu, openRenameCategory, openHelp, openSearch } from './views/sheets.js';
 import { openAccount, askSignOut } from './views/account.js';
 import * as Sync from './sync.js';
 import * as Auth from './auth.js';
 
-const ROUTES = { today: Today, calendar: Calendar, review: Review, habits: Habits, elements: Elements, sys: System };
+const ROUTES = { today: Today, notes: Notes, calendar: Calendar, review: Review, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
 const quick = document.querySelector('.quick');
 const daybar = document.getElementById('daybar');
@@ -144,6 +145,13 @@ const actions = {
     sec?.querySelector('.section')?.setAttribute('aria-expanded', String(!on));
     await A.setFolded(d.sec, on);
   },
+  async ongoingdone() { await A.setSettings({ ongoingShowDone: !S.settings.ongoingShowDone }); },
+  async notepin(d) {
+    const n = S.atoms.find(x => x.id === d.id); if (!n) return;
+    await A.undoable('pin', () => A.updateAtom(n.id, { pinned: !n.pinned }));
+    toast(n.pinned ? 'removed from Today' : 'shows on Today every day', { undo: true });
+  },
+  newnote: () => openEditor(null, { kind: 'note' }),
   lowonly() { S.ui.lowOnly = !S.ui.lowOnly; render(); },
   async day(d) {
     const cur = A.logsFor(d.id).get(d.date)?.status;
@@ -218,6 +226,13 @@ main.addEventListener('submit', async e => {
     const err = A.validCategoryName(f.t.value); if (err) return toast(err);
     const e = await A.addCategory(f.t.value); toast(`${M.tagOf(e.name)} added`);
   }
+  if (f.dataset.form === 'addnote') {
+    const text = f.t.value.trim(); if (!text) return;
+    const made = await A.undoable('note', () => A.addParsed(M.parseQuickAdd('#note ' + text, S.elements, S.isotopes)));
+    const n = made[0];
+    toast(n?.appended ? `added ${n.appended} to ${n.title}` : 'note added', { undo: true });
+    setTimeout(() => main.querySelector('form[data-form=addnote] input')?.focus(), 0);
+  }
   if (f.dataset.form === 'addcost') {
     const costs = M.parseCosts(f.t.value.trim()); if (!costs.length) return;
     await A.undoable('addcost', () => A.addCosts(f.dataset.id, costs));
@@ -252,7 +267,10 @@ quick.querySelector('form').addEventListener('submit', async e => {
     : made.length > 1 ? `${made.length} time blocks added`
     : first.kind === 'habit' ? `habit added · ${M.describeRepeat(first)}`
     : first.kind === 'block' ? `time block added · ${M.fmtTime(first.start)}–${M.fmtTime(first.end)}`
-    : first.kind === 'list' ? `list added · ${first.items.length} items` : 'task added';
+    : first.kind === 'list' ? `list added · ${first.items.length} items`
+    : first.kind === 'note' ? 'note added · find it in NOTES'
+    : first.ongoing ? 'ongoing task added · stays until done'
+    : first.dueDate ? `task added · ${M.prettyDate(first.dueDate)}` : 'task added';
   // warn if a new time block overlaps anything already scheduled that day
   let warn = '';
   for (const b of made.filter(x => x && x.kind === 'block')) {
@@ -324,7 +342,7 @@ setInterval(async () => {
 
 // sheet: close on backdrop tap
 document.getElementById('sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
-document.getElementById('sheet').addEventListener('close', e => { e.target.querySelector('.inner').innerHTML = ''; });
+document.getElementById('sheet').addEventListener('close', e => { if (!e.target.open) e.target.querySelector('.inner').innerHTML = ''; }); // (not if another sheet already opened)
 
 // install prompt (Chrome/Android)
 document.querySelector('header .hsearch').addEventListener('click', () => actions.search());

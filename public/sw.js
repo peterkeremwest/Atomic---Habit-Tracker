@@ -1,11 +1,11 @@
 // Atomic service worker ("the receptionist's shelf of photocopies").
 // App code is fetched NETWORK-FIRST so a new deploy shows on the first reload (Forge lesson);
 // the shelf copy is only used when offline. Fonts and icons are cache-first (they never change per version).
-const CACHE = 'atomic-v0.2.3';
+const CACHE = 'atomic-v0.2.4';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/theme.css',
   './js/app.js', './js/state.js', './js/db.js', './js/model.js', './js/ui.js', './js/version.js', './js/config.js', './js/auth.js', './js/sync.js',
-  './js/views/today.js', './js/views/calendar.js', './js/views/review.js', './js/views/habits.js', './js/views/elements.js', './js/views/system.js', './js/views/sheets.js', './js/views/account.js',
+  './js/views/today.js', './js/views/calendar.js', './js/views/review.js', './js/views/habits.js', './js/views/elements.js', './js/views/system.js', './js/views/sheets.js', './js/views/account.js', './js/views/notes.js', './js/views/datepick.js',
   './vendor/fonts/vt323.woff2', './vendor/fonts/courier-prime-400.woff2', './vendor/fonts/courier-prime-700.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/favicon-64.png',
 ];

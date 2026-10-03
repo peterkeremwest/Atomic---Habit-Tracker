@@ -24,7 +24,9 @@ export function toast(msg, { undo = false } = {}) {
 // Bottom sheet built on <dialog>. mount(root) wires the content's own handlers.
 export function openSheet(html, mount) {
   const d = document.getElementById('sheet');
-  d.querySelector('.inner').innerHTML = html;
+  const inner = d.querySelector('.inner');
+  inner.onclick = null; // the previous sheet's tap handler must not leak into this one
+  inner.innerHTML = html;
   if (!d.open) d.showModal();
   mount?.(d.querySelector('.inner'));
 }

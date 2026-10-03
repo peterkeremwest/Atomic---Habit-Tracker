@@ -143,3 +143,53 @@ console.log('model tests passed');
   assert.ok(a.items[0].id);
   console.log('v0.2.1 expense tests passed');
 }
+
+// v0.2.4: one day name = one date; plural / "every" = repeats; ongoing tasks; notes
+{
+  let x = one('buy groceries on Friday');
+  assert.equal(x.kind, 'task'); assert.equal(x.dueDate, '2026-10-02'); assert.equal(x.title, 'buy groceries'); assert.equal(x.repeat, null);
+  x = one('buy groceries on Fridays'); assert.equal(x.kind, 'habit'); assert.deepEqual(x.repeat, { type: 'days', days: [5] }); assert.equal(x.title, 'buy groceries');
+  x = one('buy groceries every friday'); assert.equal(x.kind, 'habit'); assert.deepEqual(x.repeat, { type: 'days', days: [5] }); assert.equal(x.title, 'buy groceries');
+  x = one('call mom tuesday'); assert.equal(x.dueDate, T, 'same weekday = today');
+  x = one('call mom next tuesday'); assert.equal(x.dueDate, '2026-10-06'); assert.equal(x.title, 'call mom');
+  x = one('call mom this fri'); assert.equal(x.dueDate, '2026-10-02'); assert.equal(x.title, 'call mom');
+  x = one('#fitness workout monday wednesday friday'); assert.equal(x.kind, 'habit');
+  x = one('#habit gym friday'); assert.deepEqual(x.repeat, { type: 'days', days: [5] });
+  x = one('pushups x20 sunday'); assert.deepEqual(x.repeat, { type: 'days', days: [0] });
+  x = one('dentist 2pm-3pm thursday'); assert.equal(x.kind, 'block'); assert.equal(x.date, '2026-10-01'); assert.equal(x.repeat, null);
+  x = one('work 9am-5pm fridays'); assert.deepEqual(x.repeat, { type: 'days', days: [5] }); assert.equal(x.date, null);
+  x = one('#ongoing learn spanish'); assert.equal(x.kind, 'task'); assert.equal(x.ongoing, true); assert.equal(x.dueDate, null); assert.equal(x.title, 'learn spanish');
+  x = one('#goal run a marathon friday'); assert.equal(x.ongoing, true); assert.equal(x.dueDate, null);
+  const g = M.makeAtom(x);
+  assert.equal(M.frequency(g), 'ongoing');
+  assert.equal(M.showsOn(g, new Map(), T, T), true); assert.equal(M.showsOn(g, new Map(), '2026-10-20', T), true); assert.equal(M.showsOn(g, new Map(), '2026-09-01', T), false);
+  assert.equal(M.countsToday(g, new Map(), T), false);
+  const gd = { ...g, completedOn: '2026-09-27' };
+  assert.equal(M.showsOn(gd, new Map(), T, T), false); assert.equal(M.showsOn(gd, new Map(), T, T, { showDone: true }), true);
+  assert.equal(M.showsOn(gd, new Map(), '2026-09-27', T), true);
+  x = one('#note books to read: dune, piranesi'); assert.equal(x.kind, 'note'); assert.equal(x.title, 'books to read'); assert.deepEqual(x.items, ['dune', 'piranesi']);
+  const n = M.makeAtom(x);
+  assert.equal(n.pinned, false); assert.equal(n.items.length, 2); assert.equal(M.showsOn(n, new Map(), T, T), false);
+  assert.equal(M.showsOn({ ...n, pinned: true }, new Map(), T, T), true); assert.equal(M.countsToday(n, new Map(), T), false);
+  console.log('v0.2.4 day-name, ongoing & note tests passed');
+}
+
+// v0.2.4: duplicate categories merge into the oldest one
+{
+  const a = M.seedRecords(), b = M.seedRecords();
+  assert.equal(a.elements[0].id, b.elements[0].id, 'seed ids are fixed');
+  const old = { ...M.newRecord('el', { name: 'Fitness' }), createdAt: '2026-09-01T00:00:00Z' };
+  const dup = { ...M.newRecord('el', { name: 'fit ness' }), createdAt: '2026-09-10T00:00:00Z' };
+  const isoA = M.newRecord('iso', { elementId: old.id, name: 'Cardio' });
+  const isoB = M.newRecord('iso', { elementId: dup.id, name: 'cardio' });
+  const isoC = M.newRecord('iso', { elementId: dup.id, name: 'Yoga' });
+  const item = M.makeAtom({ title: 'run', elementId: dup.id, isotopeId: isoB.id });
+  const plan = M.planDedupe([old, dup], [isoA, isoB, isoC], [item]);
+  assert.deepEqual(plan.elements.map(e => e.id), [dup.id]); assert.ok(plan.elements[0].deletedAt);
+  assert.equal(plan.atoms[0].elementId, old.id); assert.equal(plan.atoms[0].isotopeId, isoA.id);
+  assert.ok(plan.isotopes.find(i => i.id === isoB.id).deletedAt);
+  assert.equal(plan.isotopes.find(i => i.id === isoC.id).elementId, old.id);
+  const again = M.planDedupe([old, plan.elements[0]], [isoA, ...plan.isotopes], plan.atoms);
+  assert.equal(again.elements.length + again.isotopes.length + again.atoms.length, 0, 'second run changes nothing');
+  console.log('v0.2.4 duplicate category tests passed');
+}

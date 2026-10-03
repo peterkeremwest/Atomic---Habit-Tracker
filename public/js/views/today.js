@@ -138,8 +138,31 @@ function expenseCard(l, k, just, drag = true) {
   </div>`;
 }
 
+// A note pinned to Today: its checklist can be ticked and added to right here; the text shows underneath.
+export function noteCard(n, { drag = true, where = 'today' } = {}) {
+  const items = n.items || [];
+  const done = items.filter(i => i.done).length;
+  return `<div class="listcard notecard" data-atom="${n.id}">
+    <div class="row" data-atom="${n.id}">
+      <span class="nmark vt" aria-hidden="true">${n.pinned ? '★' : '¶'}</span>
+      <div class="body">
+        <button class="title" data-action="edit" data-id="${n.id}">${esc(n.title)}</button>
+        ${items.length ? `<div class="meta"><span>${done} of ${items.length} checked</span></div>` : ''}
+      </div>
+      ${where === 'notes' ? `<button class="btn vt npin ${n.pinned ? 'on' : ''}" data-action="notepin" data-id="${n.id}" aria-pressed="${!!n.pinned}" aria-label="${n.pinned ? 'Remove from Today' : 'Show on Today every day'}">${n.pinned ? '★ TODAY' : '☆ TODAY'}</button>` : ''}
+      ${handle(n, drag)}
+      <button class="more" data-action="menu" data-id="${n.id}" aria-label="More options for ${esc(n.title)}">⋯</button>
+    </div>
+    ${items.length ? `<ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
+      <button class="chk small vt" data-action="item" data-id="${n.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
+      <span class="itxt">${esc(i.text)}</span></li>`).join('')}</ul>` : ''}
+    ${n.note ? `<p class="ntext">${esc(n.note)}</p>` : ''}
+    <form class="additem" data-form="additem" data-id="${n.id}"><input class="field" name="t" maxlength="120" placeholder="+ add to ${esc(n.title)}" aria-label="Add to ${esc(n.title)}"></form>
+  </div>`;
+}
+
 const SECTIONS = [
-  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['list', 'LISTS'], ['expense', 'EXPENSES'],
+  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['ongoing', 'ONGOING'], ['list', 'LISTS'], ['expense', 'EXPENSES'], ['note', 'NOTES'],
 ];
 
 export function renderTop() { return dayNav(S.ui.date); }
@@ -164,7 +187,8 @@ export function render({ just } = {}) {
   let atoms = live(S.atoms);
   if (filterEl) atoms = atoms.filter(a => a.elementId === filterEl);
   if (lowOnly) atoms = atoms.filter(a => a.energy === 'low');
-  const shown = atoms.filter(a => M.showsOn(a, logsFor(a.id), k, real));
+  const showDone = !!S.settings.ongoingShowDone;
+  const shown = atoms.filter(a => M.showsOn(a, logsFor(a.id), k, real, { showDone }));
 
   const counted = shown.filter(a => M.countsToday(a, logsFor(a.id), k));
   const doneN = counted.filter(a => M.statusFor(a, logsFor(a.id), k) === 'done').length;
@@ -175,16 +199,21 @@ export function render({ just } = {}) {
     .concat(`<button class="chip ${lowOnly ? 'on' : ''}" data-action="lowonly">Low energy</button>`);
 
   const bySection = new Map(SECTIONS.map(([key]) => [key, []]));
-  for (const a of shown) bySection.get(a.focusOn === k && a.kind !== 'block' ? 'focus' : M.frequency(a)).push(a);
+  for (const a of shown) bySection.get(a.focusOn === k && a.kind !== 'block' && a.kind !== 'note' ? 'focus' : M.frequency(a)).push(a);
   bySection.get('schedule').sort((x, y) => x.start.localeCompare(y.start));
   const clash = M.clashes(bySection.get('schedule'));
 
-  const body = SECTIONS.filter(([key]) => bySection.get(key).length).map(([key, label]) => {
+  const finishedOngoing = k === real ? atoms.filter(a => a.kind === 'task' && a.ongoing && a.completedOn && a.completedOn !== k).length : 0;
+  const body = SECTIONS.filter(([key]) => bySection.get(key).length || (key === 'ongoing' && finishedOngoing)).map(([key, label]) => {
     const list = bySection.get(key);
     const n = key === 'schedule' ? list.length
-      : key === 'expense' ? `${M.fmtMoney(list.reduce((t, a) => t + M.expenseTotal(a), 0))} total` : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
+      : key === 'expense' ? `${M.fmtMoney(list.reduce((t, a) => t + M.expenseTotal(a), 0))} total`
+      : key === 'note' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
     let rows = list.map(a => key === 'schedule' ? blockRow(a, k, clash.get(a.id))
-      : a.kind === 'list' ? listCard(a, k, just) : a.kind === 'expense' ? expenseCard(a, k, just) : atomRow(a, k, { just })).join('');
+      : a.kind === 'note' ? noteCard(a) : a.kind === 'list' ? listCard(a, k, just) : a.kind === 'expense' ? expenseCard(a, k, just) : atomRow(a, k, { just })).join('');
+    if (key === 'ongoing' && k === real) {
+      if (finishedOngoing) rows += `<button class="btn vt moveleft" data-action="ongoingdone">${showDone ? 'HIDE FINISHED ONES' : `SHOW ${finishedOngoing} FINISHED`}</button>`;
+    }
     if (key === 'once' && k === real) {
       const left = leftovers(k).filter(a => a.focusOn !== k).length;
       if (left) rows += `<button class="btn vt moveleft" data-action="moveleft">MOVE ${left} UNFINISHED TO TOMORROW ▶</button>`;

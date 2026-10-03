@@ -62,14 +62,55 @@ export const DEFAULT_CATEGORIES = [
   { name: 'People',   subs: [] },
   { name: 'Personal', subs: ['Reading', 'Mind'] },
 ];
+// Starter categories get FIXED ids (el_seed_fitness…), so two devices that both start fresh
+// make the very same records and sync merges them into one instead of doubling them.
+const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 export function seedRecords() {
   const elements = [], isotopes = [];
   DEFAULT_CATEGORIES.forEach((c, i) => {
-    const el = newRecord('el', { name: c.name, order: i });
+    const el = { ...newRecord('el', { name: c.name, order: i }), id: `el_seed_${slug(c.name)}`, createdAt: '2026-01-01T00:00:00.000Z' };
     elements.push(el);
-    c.subs.forEach((name, j) => isotopes.push(newRecord('iso', { elementId: el.id, name, order: j })));
+    c.subs.forEach((name, j) => isotopes.push({ ...newRecord('iso', { elementId: el.id, name, order: j }), id: `iso_seed_${slug(c.name)}_${slug(name)}`, createdAt: '2026-01-01T00:00:00.000Z' }));
   });
   return { elements, isotopes };
+}
+
+// ---------- duplicate categories ----------
+// Same name (ignoring case and spaces) = the same category. Keeps the oldest one (ties: smallest id, so
+// every device picks the same keeper) and returns what to change: moved items, merged subcategories, removed copies.
+export const catKey = name => String(name || '').toLowerCase().replace(/\s+/g, '');
+const keeperFirst = (a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || String(a.id).localeCompare(String(b.id));
+export function planDedupe(elements, isotopes, atoms) {
+  const t = nowIso();
+  const elOut = new Map(), isoOut = new Map(), atomOut = new Map();
+  const liveEls = elements.filter(e => !e.deletedAt);
+  const liveIsos = isotopes.filter(i => !i.deletedAt);
+  const elMap = new Map(); // removed element id -> keeper id
+  const groups = new Map();
+  for (const e of liveEls) { const k = catKey(e.name); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    g.sort(keeperFirst);
+    for (const dup of g.slice(1)) { elMap.set(dup.id, g[0].id); elOut.set(dup.id, { ...dup, deletedAt: t, updatedAt: t }); }
+  }
+  // subcategories: move the removed categories' ones to the keeper, then merge same-named ones
+  const isoEl = new Map(liveIsos.map(i => [i.id, elMap.get(i.elementId) || i.elementId]));
+  const isoMap = new Map();
+  const sg = new Map();
+  for (const i of liveIsos) { const k = isoEl.get(i.id) + '|' + catKey(i.name); if (!sg.has(k)) sg.set(k, []); sg.get(k).push(i); }
+  for (const g of sg.values()) {
+    // the subcategory already in the kept category wins, then the oldest
+    g.sort((a, b) => (elMap.has(a.elementId) - elMap.has(b.elementId)) || keeperFirst(a, b));
+    const keep = g[0];
+    if (isoEl.get(keep.id) !== keep.elementId) isoOut.set(keep.id, { ...keep, elementId: isoEl.get(keep.id), updatedAt: t });
+    for (const dup of g.slice(1)) { isoMap.set(dup.id, keep.id); isoOut.set(dup.id, { ...dup, deletedAt: t, updatedAt: t }); }
+  }
+  for (const a of atoms) {
+    if (a.deletedAt) continue;
+    const el = elMap.get(a.elementId), iso = isoMap.get(a.isotopeId);
+    if (el || iso) atomOut.set(a.id, { ...a, elementId: el || a.elementId, isotopeId: iso || a.isotopeId, updatedAt: t });
+  }
+  return { elements: [...elOut.values()], isotopes: [...isoOut.values()], atoms: [...atomOut.values()] };
 }
 export function findCategory(tag, elements) {
   const t = tag.toLowerCase().replace(/\s+/g, '');
@@ -93,6 +134,8 @@ export function findCategory(tag, elements) {
 // task:  dueDate | null, completedOn | null
 // block: start 'HH:MM', end 'HH:MM', date | null, repeat null | {type:'daily'|'days'}
 // list:  items [{ id, text, done }], completedOn set automatically when every item is checked
+// task:  ongoing true = no date; stays on Today (ONGOING section) every day until it's checked
+// note:  items [{ id, text, done }] + note (free text); lives on the NOTES screen, pinned true = also shown on Today
 // expense: items [{ id, text, cents }] (whole cents, so totals never drift), completedOn = the day it was marked paid
 export function makeAtom(f) {
   const kind = f.kind || 'task';
@@ -108,12 +151,14 @@ export function makeAtom(f) {
     date: kind === 'block' ? (f.repeat ? null : (f.date || todayKey())) : null,
     start: kind === 'block' ? f.start : null,
     end: kind === 'block' ? f.end : null,
-    items: kind === 'list' || kind === 'task' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t))
+    items: kind === 'list' || kind === 'task' || kind === 'note' ? (f.items || []).map(t => (typeof t === 'string' ? { id: uid('li'), text: t, done: false } : t))
       : kind === 'expense' ? (f.items || []).map(t => ({ id: t.id || uid('li'), text: t.text, cents: t.cents || 0 })) : null,
     completedOn: null,
     energy: f.energy || null,
     focusOn: null,
     note: f.note || '',
+    ongoing: kind === 'task' ? !!f.ongoing : false,   // task with no date that stays on Today until it's done
+    pinned: kind === 'note' ? !!f.pinned : false,     // note shown on Today every day
     order: f.order ?? Date.now(),
   });
 }
@@ -124,7 +169,8 @@ export function frequency(a) {
   if (a.kind === 'block') return 'schedule';
   if (a.kind === 'list') return 'list';
   if (a.kind === 'expense') return 'expense';
-  if (a.kind === 'task') return 'once';
+  if (a.kind === 'note') return 'note';
+  if (a.kind === 'task') return a.ongoing ? 'ongoing' : 'once';
   const t = a.repeat?.type;
   if (t === 'days' || t === 'perWeek') return 'weekly';
   if (t === 'perMonth' || t === 'monthDay') return 'monthly';
@@ -163,8 +209,15 @@ export const quotaMet = (a, logs, k) => isQuota(a) && periodDoneCount(a, logs, k
 //   today:  open tasks that are due/overdue/undated, plus anything finished today
 //   past:   tasks due or finished that day, lists finished that day
 //   future: tasks due that day
-export function showsOn(a, logsByDate, k, today = todayKey()) {
+export function showsOn(a, logsByDate, k, today = todayKey(), { showDone = false } = {}) {
   if (a.deletedAt) return false;
+  if (a.kind === 'note') return !!a.pinned && k >= today;
+  if (a.kind === 'task' && a.ongoing) {
+    // open: every day from today on, until it's checked. done: the day it was done,
+    // and (when "keep finished visible" is on) on today as well
+    if (a.completedOn) return k === a.completedOn || (showDone && k === today);
+    return k >= today;
+  }
   if (a.kind === 'task') {
     if (k === today) return a.completedOn ? a.completedOn === k : (!a.dueDate || a.dueDate <= k);
     if (k < today) return a.completedOn === k || (a.dueDate === k && (!a.completedOn || a.completedOn >= k));
@@ -209,6 +262,7 @@ export function relativeDay(k, today = todayKey()) {
 
 // 'done' | 'partial' | 'skipped' | 'met' (weekly/monthly quota already reached) | null
 export function statusFor(a, logsByDate, k) {
+  if (a.kind === 'note') return null;
   if (a.kind === 'task' || a.kind === 'list' || a.kind === 'expense') return a.completedOn ? 'done' : null;
   if (a.kind === 'block') return null;
   const s = logsByDate.get(k)?.status || null;
@@ -218,7 +272,8 @@ export function statusFor(a, logsByDate, k) {
 
 // Counts toward today's progress? (time blocks, expense lists and already-met quotas don't)
 export function countsToday(a, logsByDate, k) {
-  if (a.kind === 'block' || a.kind === 'expense') return false;
+  if (a.kind === 'block' || a.kind === 'expense' || a.kind === 'note') return false;
+  if (a.kind === 'task' && a.ongoing) return a.completedOn === k; // open goals don't count against a day; finishing one does count
   const s = statusFor(a, logsByDate, k);
   return s !== 'met' && s !== 'skipped';
 }
@@ -329,6 +384,8 @@ function takeTags(text) {
     if (['expense', 'expenses', 'cost', 'costs'].includes(l)) { special.add('expense'); return ' '; }
     if (['daily', 'weekly', 'monthly', 'weekdays', 'weekends'].includes(l)) return ` ${l} `;
     if (l === 'habit') { special.add('habit'); return ' '; }
+    if (['ongoing', 'goal', 'goals', 'someday', 'anytime'].includes(l)) { special.add('ongoing'); return ' '; }
+    if (['note', 'notes'].includes(l)) { special.add('note'); return ' '; }
     tags.push({ name, sub: sub ? sub.trim() : null });
     return ' ';
   });
@@ -356,23 +413,42 @@ function resolveTags(tags, elements, isotopes) {
 
 const clean = s => s.replace(/\s+/g, ' ').replace(/^[\s:,-]+|[\s:,-]+$/g, '').trim();
 
+// Day names:
+//   "on friday" / "fri" / "this friday"   -> ONE date: the nearest Friday (today if it's Friday)
+//   "next friday"                         -> the nearest Friday after today
+//   "fridays" / "every friday"            -> repeats every Friday
+//   two or more days ("mon wed fri")      -> repeats on those days (one task can't be due on three days)
+const PLURAL_DAYS = new Set([...DAY_FULL.map(n => n.toLowerCase() + 's'), 'suns', 'mons', 'fris', 'sats']);
+export function nextWeekday(today, day, { strict = false } = {}) {
+  let n = (day - weekday(today) + 7) % 7;
+  if (n === 0 && strict) n = 7;
+  return addDays(today, n);
+}
 function parseDayWords(words, today) {
-  const days = new Set(); let date = null, repeat = null; const rest = [];
+  const days = new Set(); let date = null, repeat = null, every = false, next = false; const rest = [];
+  const isDay = w => (w || '').toLowerCase().replace(/[,.]$/, '') in DAY_WORDS;
   for (let i = 0; i < words.length; i++) {
     const w = words[i].toLowerCase().replace(/[,.]$/, '');
     if (w === 'every' && i + 1 < words.length && ['day', 'day,'].includes(words[i + 1].toLowerCase())) { repeat = { type: 'daily' }; i++; continue; }
-    if (w === 'every' && i + 1 < words.length && words[i + 1].toLowerCase().replace(/[,.]$/, '') in DAY_WORDS) continue;
-    if (w in DAY_WORDS) { days.add(DAY_WORDS[w]); continue; }
-    if (w === 'weekdays') { [1, 2, 3, 4, 5].forEach(d => days.add(d)); continue; }
-    if (w === 'weekends') { [0, 6].forEach(d => days.add(d)); continue; }
+    if (w === 'every' && isDay(words[i + 1])) { every = true; continue; }
+    if (w === 'next' && isDay(words[i + 1])) { next = true; continue; }
+    if (w === 'this' && isDay(words[i + 1])) continue;
+    if (w in DAY_WORDS) { days.add(DAY_WORDS[w]); if (PLURAL_DAYS.has(w)) every = true; continue; }
+    if (w === 'weekdays') { [1, 2, 3, 4, 5].forEach(d => days.add(d)); every = true; continue; }
+    if (w === 'weekends') { [0, 6].forEach(d => days.add(d)); every = true; continue; }
     if (w === 'daily' || w === 'everyday') { repeat = { type: 'daily' }; continue; }
     if (w === 'today' || w === 'tonight') { date = today; continue; }
     if (w === 'tomorrow' || w === 'tmr' || w === 'tmrw') { date = addDays(today, 1); continue; }
-    if (['and', '&', 'on'].includes(w) && rest.length && i + 1 < words.length && words[i + 1].toLowerCase().replace(/[,.]$/, '') in DAY_WORDS) continue;
+    if (['and', '&', 'on'].includes(w) && rest.length && i + 1 < words.length && (isDay(words[i + 1]) || /^(next|this|every)$/i.test(words[i + 1]))) continue;
     rest.push(words[i]);
   }
-  if (days.size) repeat = days.size === 7 ? { type: 'daily' } : { type: 'days', days: [...days].sort() };
-  return { days, date, repeat, rest };
+  let oneDay = null;
+  if (days.size === 1 && !every) {
+    // a single plain day name = one date, not a weekly repeat
+    oneDay = [...days][0];
+    if (!date) date = nextWeekday(today, oneDay, { strict: next });
+  } else if (days.size) repeat = days.size === 7 ? { type: 'daily' } : { type: 'days', days: [...days].sort() };
+  return { days, date, repeat, rest, oneDay };
 }
 
 export function parseQuickAdd(text, elements = [], isotopes = [], today = todayKey(), defaultDate = today) {
@@ -389,6 +465,14 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
     if (ci >= 0) { title = clean(body.slice(0, ci)); items = body.slice(ci + 1).split(/[,;\n]/).map(clean).filter(Boolean); }
     else { const parts = body.split(/[,;\n]/).map(clean).filter(Boolean); title = parts.length > 1 ? 'List' : (parts[0] || 'List'); items = parts.length > 1 ? parts : []; }
     return [{ ...base, kind: 'list', title: title || 'List', items }];
+  }
+
+  // ----- note (lives on the NOTES screen): "#note books to read: dune, piranesi" -----
+  if (special.has('note')) {
+    const ci = body.indexOf(':');
+    const title = clean(ci >= 0 ? body.slice(0, ci) : body);
+    const items = ci >= 0 ? body.slice(ci + 1).split(/[,;\n]/).map(clean).filter(Boolean) : [];
+    return [{ ...base, kind: 'note', title: title || 'Note', items }];
   }
 
   // ----- expense list: "#expense car repair: tires $10 brakes $50 labor $40", or any "title: thing $amount" -----
@@ -467,11 +551,14 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
   else if (monthly) out.repeat = { type: 'perMonth', count: 1 };
   else if (dw.repeat) out.repeat = dw.repeat;
   else if (weekly) out.repeat = { type: 'perWeek', count: 1 };
-  if (!out.repeat && out.target.kind === 'count') out.repeat = { type: 'daily' };
-  if (!out.repeat && special.has('habit')) out.repeat = { type: 'daily' };
-  if (timer) { out.target = { kind: 'timer', minutes: Math.min(600, timer) }; if (!out.repeat) out.repeat = { type: 'daily' }; }
-  if (special.has('task')) out.repeat = null;
+  // already a habit for another reason (#habit, x8, timer) + one day name -> every week on that day
+  const habitDefault = dw.oneDay !== null ? { type: 'days', days: [dw.oneDay] } : { type: 'daily' };
+  if (!out.repeat && out.target.kind === 'count') out.repeat = habitDefault;
+  if (!out.repeat && special.has('habit')) out.repeat = habitDefault;
+  if (timer) { out.target = { kind: 'timer', minutes: Math.min(600, timer) }; if (!out.repeat) out.repeat = habitDefault; }
+  if (special.has('task') || special.has('ongoing')) out.repeat = null;
   if (out.repeat) out.kind = 'habit'; else out.dueDate = dw.date || (defaultDate !== today ? defaultDate : null);
+  if (special.has('ongoing') && out.kind === 'task') { out.ongoing = true; out.dueDate = null; }
   out.title = clean(dw.rest.join(' '));
   if (steps) { if (out.kind === 'task') out.items = steps; else out.note = steps.join(', '); }
   return [out];

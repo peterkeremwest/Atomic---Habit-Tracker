@@ -52,8 +52,26 @@ export async function load() {
   S.settings = { ...S.settings, ...(await db.getMeta('settings', {})) };
   S.ui.folded = new Set(await db.getMeta('folded', []));
   S.timers = await db.getMeta('timers', {});
+  await dedupe();
   reindex();
   await refreshPending();
+}
+
+// ---------- no duplicate categories ----------
+// Merges categories (and subcategories) that share a name: items move to the one kept, the copies are
+// removed (soft delete, so the cloud and other devices get the fix too). Runs on start and after every sync.
+export async function dedupe() {
+  const plan = M.planDedupe(S.elements, S.isotopes, S.atoms);
+  let n = 0;
+  for (const store of ['elements', 'isotopes', 'atoms']) {
+    const recs = plan[store];
+    if (!recs.length) continue;
+    await db.put(store, recs);
+    for (const r of recs) { const i = S[store].findIndex(x => x.id === r.id); if (i >= 0) S[store][i] = r; else S[store].push(r); }
+    n += recs.length;
+  }
+  if (n) { if (S.ui.filterEl && S.elements.find(e => e.id === S.ui.filterEl)?.deletedAt) S.ui.filterEl = null; await refreshPending(); saved(); }
+  return n;
 }
 
 // ---------- undo: record the previous version of everything an action touches ----------
@@ -122,7 +140,7 @@ export async function toggle(atomId, date = M.todayKey()) {
     const items = a.items.map(i => ({ ...i, done: !allDone }));
     return updateAtom(atomId, { items, completedOn: !allDone && items.length ? date : null });
   }
-  if (a.kind === 'block') return;
+  if (a.kind === 'block' || a.kind === 'note') return;
   if (a.kind === 'expense') { // the checkbox marks the whole expense list as paid
     const today = M.todayKey();
     return updateAtom(atomId, { completedOn: a.completedOn ? null : (date > today ? today : date) });
@@ -150,12 +168,17 @@ export const setStatus = (atomId, date, status) =>
   setLog(atomId, date, status === null ? { status: null, count: 0 } : { status });
 
 export async function snooze(atomId) {
-  return updateAtom(atomId, { dueDate: M.addDays(M.todayKey(), 1) });
+  return updateAtom(atomId, { dueDate: M.addDays(M.todayKey(), 1), ongoing: false });
+}
+// move a task to any day picked on the calendar (a focus pin for another day doesn't follow it)
+export async function moveTo(atomId, date) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  return updateAtom(atomId, { dueDate: date, ongoing: false, focusOn: a.focusOn === date ? a.focusOn : null });
 }
 
 // unfinished one-time tasks showing on `date` -> the next day
 export function leftovers(date) {
-  return live(S.atoms).filter(a => a.kind === 'task' && !a.completedOn && (!a.dueDate || a.dueDate <= date));
+  return live(S.atoms).filter(a => a.kind === 'task' && !a.ongoing && !a.completedOn && (!a.dueDate || a.dueDate <= date));
 }
 export async function moveLeftovers(date) {
   const list = leftovers(date);
@@ -221,6 +244,7 @@ export async function timerSweep() {
 export async function toggleListItem(atomId, itemId) {
   const a = S.atoms.find(x => x.id === atomId); if (!a) return;
   const items = a.items.map(i => (i.id === itemId ? { ...i, done: !i.done } : i));
+  if (a.kind === 'note') return updateAtom(atomId, { items }); // notes never "finish"
   const all = items.length && items.every(i => i.done);
   return updateAtom(atomId, { items, completedOn: all ? (a.completedOn || M.todayKey()) : null });
 }
@@ -263,6 +287,10 @@ export async function addParsed(parsedList) {
       const open = live(S.atoms).find(a => a.kind === 'list' && !a.completedOn && a.title.toLowerCase() === f.title.toLowerCase());
       if (open) { await addListItems(open.id, f.items); made.push({ ...open, appended: f.items.length }); continue; }
     }
+    if (f.kind === 'note') {
+      const same = live(S.atoms).find(a => a.kind === 'note' && a.title.toLowerCase() === f.title.toLowerCase());
+      if (same) { await addListItems(same.id, f.items); made.push({ ...S.atoms.find(a => a.id === same.id), appended: f.items.length }); continue; }
+    }
     if (f.kind === 'expense') {
       const open = live(S.atoms).find(a => a.kind === 'expense' && !a.completedOn && a.title.toLowerCase() === f.title.toLowerCase());
       if (open) { await addCosts(open.id, f.items); made.push({ ...S.atoms.find(a => a.id === open.id), appended: f.items.length }); continue; }
@@ -281,8 +309,11 @@ export function validCategoryName(name, exceptId = null) {
   if (live(S.elements).some(e => e.id !== exceptId && e.name.toLowerCase().replace(/\s+/g, '') === n.toLowerCase().replace(/\s+/g, ''))) return `${n} already exists`;
   return null;
 }
-export const addCategory = name =>
-  save('elements', M.newRecord('el', { name: name.trim(), order: Date.now() }));
+export function addCategory(name) {
+  const existing = live(S.elements).find(e => M.catKey(e.name) === M.catKey(name));
+  if (existing) return existing; // never make a second category with the same name
+  return save('elements', M.newRecord('el', { name: name.trim(), order: Date.now() }));
+}
 export async function updateElement(id, patch) {
   const e = elementById(id); if (!e) return;
   return save('elements', { ...e, ...patch });
@@ -293,8 +324,11 @@ export async function deleteElement(id) {
   for (const i of isotopesOf(id)) await save('isotopes', { ...i, deletedAt: M.nowIso() });
   return updateElement(id, { deletedAt: M.nowIso() });
 }
-export const addIsotope = (elementId, name) =>
-  save('isotopes', M.newRecord('iso', { elementId, name: name.trim(), order: Date.now() }));
+export function addIsotope(elementId, name) {
+  const existing = isotopesOf(elementId).find(i => M.catKey(i.name) === M.catKey(name));
+  if (existing) return existing;
+  return save('isotopes', M.newRecord('iso', { elementId, name: name.trim(), order: Date.now() }));
+}
 export async function deleteIsotope(id) {
   const i = isotopeById(id); if (!i) return;
   for (const a of live(S.atoms).filter(a => a.isotopeId === id)) await updateAtom(a.id, { isotopeId: null });
@@ -326,6 +360,7 @@ export async function importData(json) {
     if (changed.length) { await db.put(s, changed, { keepStamp: true }); n += changed.length; }
     S[s] = merged;
   }
+  await dedupe();
   reindex(); await refreshPending(); emit(); saved();
   return n;
 }
@@ -350,13 +385,14 @@ export async function applyRemote(itemsByStore) {
     await db.putQuiet(s, changed);
     S[s] = merged; n += changed.length;
   }
-  if (n) { reindex(); emit(); }
+  if (n) { await dedupe(); reindex(); emit(); }
   return n;
 }
 // first sign-in on a device that has nothing of its own yet: take the cloud copy as-is
 export async function replaceAll(itemsByStore) {
   for (const s of db.STORES) { S[s] = itemsByStore?.[s] || []; await db.replaceQuiet(s, S[s]); }
   await db.emptyOutbox();
+  await dedupe();
   reindex(); await refreshPending(); emit();
 }
 export const hasOwnData = () => S.atoms.length > 0 || S.logs.length > 0;

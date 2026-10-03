@@ -3,6 +3,7 @@ import { S, live, isotopesOf } from '../state.js';
 import * as A from '../state.js';
 import * as M from '../model.js';
 import { esc, openSheet, closeSheet, toast } from '../ui.js';
+import { dateField, wireDateFields, openDateSheet } from './datepick.js';
 
 const radio = (name, value, label, checked) =>
   `<label><input type="radio" name="${name}" value="${value}" ${checked ? 'checked' : ''}><span>${label}</span></label>`;
@@ -18,6 +19,7 @@ function repeatChoice(r) {
 
 export function openEditor(atomId = null, preset = {}) {
   const a = atomId ? S.atoms.find(x => x.id === atomId) : null;
+  if (a?.kind === 'note' || (!a && preset.kind === 'note')) return openNoteEditor(atomId, preset);
   const v = a || { kind: 'task', title: '', elementId: S.ui.filterEl, isotopeId: null, repeat: null, target: { kind: 'check' },
     dueDate: null, energy: null, note: '', start: '09:00', end: '10:00', date: M.todayKey(), items: [], ...preset };
   const r = v.repeat || { type: 'daily' };
@@ -63,8 +65,10 @@ export function openEditor(atomId = null, preset = {}) {
     </div>
 
     <div data-show="task">
-      <label for="f-due">DUE DATE (optional)</label>
-      <input class="field" type="date" id="f-due" name="dueDate" value="${v.dueDate || ''}">
+      <label>WHEN</label>
+      <div class="seg">${radio('twhen', 'date', 'ON A DAY / NO DATE', !v.ongoing)}${radio('twhen', 'ongoing', 'ONGOING (stays until done)', !!v.ongoing)}</div>
+      <div data-show-w="date" style="margin-top:8px">${dateField('dueDate', v.dueDate)}</div>
+      <p data-show-w="ongoing" class="dim" style="font-size:13px;margin:6px 0 0">shows on TODAY every day, in ONGOING, until you check it.</p>
     </div>
 
     <div data-show="block">
@@ -74,7 +78,7 @@ export function openEditor(atomId = null, preset = {}) {
       </div>
       <label>WHEN</label>
       <div class="seg">${radio('brep', 'once', 'ONE DAY', bRep === 'once')}${radio('brep', 'daily', 'EVERY DAY', bRep === 'daily')}${radio('brep', 'days', 'ON CERTAIN DAYS', bRep === 'days')}</div>
-      <div data-show-b="once" style="margin-top:8px"><input class="field" type="date" name="bdate" aria-label="Date" value="${v.date || M.todayKey()}" style="max-width:200px"></div>
+      <div data-show-b="once" style="margin-top:8px">${dateField('bdate', v.date || M.todayKey(), { allowNone: false })}</div>
       <div class="seg" data-show-b="days" style="margin-top:8px">${dayBoxes('bdays', bDays)}</div>
     </div>
 
@@ -105,7 +109,9 @@ export function openEditor(atomId = null, preset = {}) {
       root.querySelectorAll('[data-show-r]').forEach(n => n.classList.toggle('hidden', n.dataset.showR !== f.rtype.value));
       root.querySelectorAll('[data-show-t]').forEach(n => n.classList.toggle('hidden', n.dataset.showT !== f.tkind.value));
       root.querySelectorAll('[data-show-b]').forEach(n => n.classList.toggle('hidden', n.dataset.showB !== f.brep.value));
+      root.querySelectorAll('[data-show-w]').forEach(n => n.classList.toggle('hidden', n.dataset.showW !== f.twhen.value));
     };
+    wireDateFields(f);
     f.addEventListener('change', e => {
       if (e.target.name === 'elementId') f.isotopeId.innerHTML = isoOpts(e.target.value);
       sync();
@@ -141,7 +147,8 @@ export function openEditor(atomId = null, preset = {}) {
         if (f.tkind.value === 'count') data.target = { kind: 'count', goal: Math.min(99, Math.max(2, +f.goal.value || 2)) };
         if (f.tkind.value === 'timer') data.target = { kind: 'timer', minutes: Math.min(600, Math.max(1, +f.minutes.value || 25)) };
       }
-      if (kind === 'task') data.dueDate = f.dueDate.value || null;
+      data.ongoing = kind === 'task' && f.twhen.value === 'ongoing';
+      if (kind === 'task' && !data.ongoing) data.dueDate = f.dueDate.value || null;
       if (kind === 'block') {
         if (!f.start.value || !f.end.value) return toast('set a start and end time');
         data.start = f.start.value; data.end = f.end.value;
@@ -186,9 +193,13 @@ export function openMenu(atomId) {
   const future = k > M.todayKey();
   const s = M.statusFor(a, A.logsFor(a.id), k);
   const items = [];
-  if (a.kind === 'task') {
+  if (a.kind === 'note') {
+    items.push(['pin', a.pinned ? 'Remove from Today' : 'Show on Today every day']);
+    if (a.items?.some(i => i.done)) items.push(['cleardone', 'Remove checked items']);
+  } else if (a.kind === 'task') {
     items.push(['toggle', a.completedOn ? 'Mark not done' : 'Mark done']);
-    if (!a.completedOn) items.push(['snooze', 'Move to tomorrow']);
+    if (!a.completedOn) items.push(['snooze', 'Move to tomorrow'], ['moveto', a.ongoing ? 'Give it a day…' : 'Move to another day…']);
+    if (!a.completedOn && !a.ongoing) items.push(['ongoing', 'Make it ongoing (stays until done)']);
   } else if (a.kind === 'expense') {
     items.push(['toggle', a.completedOn ? 'Mark not paid' : 'Mark paid']);
   } else if (a.kind === 'list') {
@@ -205,7 +216,7 @@ export function openMenu(atomId) {
     if (s !== 'skipped') items.push(['skip', 'Skip today (keeps your streak)']);
     if (s && s !== 'met') items.push(['clear', 'Clear today']);
   }
-  if (a.kind !== 'block') items.push(['focus', a.focusOn === k ? 'Unpin from focus' : `Pin to focus${k === M.todayKey() ? '' : ' for this day'} (${A.focusCount(k)} of 3)`]);
+  if (a.kind !== 'block' && a.kind !== 'note') items.push(['focus', a.focusOn === k ? 'Unpin from focus' : `Pin to focus${k === M.todayKey() ? '' : ' for this day'} (${A.focusCount(k)} of 3)`]);
   items.push(['edit', a.kind === 'task' && !a.items?.length ? 'Edit / add steps' : 'Edit'], ['delete', 'Delete']);
   const when = k === M.todayKey() ? '' : `<p class="dim" style="margin:-6px 0 8px;font-size:13px">for ${M.prettyDate(k)}</p>`;
   openSheet(`<h2>${esc(a.title)}</h2>${when}<div class="menu">${items.map(([x, l]) =>
@@ -214,6 +225,10 @@ export function openMenu(atomId) {
       const x = e.target.closest('button')?.dataset.x;
       if (!x) return;
       if (x === 'edit') return openEditor(a.id);
+      if (x === 'moveto') return openDateSheet('MOVE TO A DAY', a.dueDate || M.addDays(M.todayKey(), 1), async d => {
+        await A.undoable('move', () => A.moveTo(a.id, d));
+        toast(`moved to ${M.prettyDate(d)} · ${M.relativeDay(d)}`, { undo: true });
+      }, { note: a.title });
       closeSheet();
       if (x === 'treset') return A.timerReset(a.id);
       if (x === 'focus') {
@@ -225,6 +240,8 @@ export function openMenu(atomId) {
         if (x === 'toggle') { await A.toggle(a.id, k); return 'updated'; }
         if (x === 'done') { await A.setStatus(a.id, k, 'done'); return 'marked done'; }
         if (x === 'snooze') { await A.snooze(a.id); return 'moved to tomorrow'; }
+        if (x === 'ongoing') { await A.updateAtom(a.id, { ongoing: true, dueDate: null, focusOn: null }); return 'now ongoing · stays on Today until done'; }
+        if (x === 'pin') { await A.updateAtom(a.id, { pinned: !a.pinned }); return a.pinned ? 'removed from Today' : 'shows on Today every day'; }
         if (x === 'partial') { await A.setStatus(a.id, k, 'partial'); return 'marked partly done'; }
         if (x === 'skip') { await A.setStatus(a.id, k, 'skipped'); return 'skipped, streak is safe'; }
         if (x === 'clear') { await A.setStatus(a.id, k, null); return 'cleared'; }
@@ -268,13 +285,17 @@ export function openHelp() {
       ${ex('#fitness', 'category (new ones are created)')}
       ${ex('#fitness/cardio', 'category + subcategory')}
       ${ex('daily', 'habit, every day')}
-      ${ex('monday wednesday friday', 'habit on those days')}
+      ${ex('monday wednesday friday', 'habit on those days (two or more)')}
       ${ex('weekdays · weekends', 'habit on those days')}
       ${ex('3x a week · weekly', 'habit, any days of the week')}
       ${ex('2x a month · monthly', 'habit, any days of the month')}
       ${ex('monthly 1st', 'habit on that day of the month')}
       ${ex('x8', 'counter habit: 8 a day')}
       ${ex('today · tomorrow', 'due date for a task')}
+      ${ex('on friday · next friday', 'one task, due that day')}
+      ${ex('fridays · every friday', 'habit, every Friday')}
+      ${ex('#ongoing learn spanish', 'no date, stays on Today until done')}
+      ${ex('#note books to read: dune', 'a note (see the NOTES tab)')}
       ${ex('!low · !high', 'energy needed')}
       ${ex('5pm-8pm · 9:30am to 1pm', 'time block (today)')}
       ${ex('#timeblock date 2pm-7pm, movie 5pm-8pm', 'several time blocks')}
@@ -293,14 +314,14 @@ export function openSearch(onPick) {
     <input class="field" id="q-search" type="search" placeholder="search titles, steps, list items, notes…" aria-label="Search" autocomplete="off">
     <div id="q-results" class="results" role="list"></div>`, root => {
     const input = root.querySelector('#q-search'), out = root.querySelector('#q-results');
-    const kindName = { task: 'one-time', habit: 'habit', block: 'time block', list: 'list', expense: 'expense list' };
+    const kindName = { task: 'one-time', habit: 'habit', block: 'time block', list: 'list', expense: 'expense list', note: 'note' };
     const run = () => {
       const q = input.value.trim().toLowerCase();
       if (!q) { out.innerHTML = '<p class="dim" style="font-size:13px">start typing.</p>'; return; }
       const hits = live(S.atoms).filter(a => [a.title, a.note, ...(a.items || []).map(i => i.text)].some(t => (t || '').toLowerCase().includes(q))).slice(0, 40);
       out.innerHTML = hits.length ? hits.map(a => {
         const el = A.elementById(a.elementId);
-        const when = a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
+        const when = a.kind === 'note' ? (a.pinned ? 'in notes · on Today' : 'in notes') : a.kind === 'task' && a.ongoing && !a.completedOn ? 'ongoing' : a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
           : a.kind === 'block' ? (a.date ? `${M.shortDate(a.date)} ${M.fmtTime(a.start)}` : `${M.describeRepeat(a)} ${M.fmtTime(a.start)}`)
           : a.kind === 'habit' ? M.describeRepeat(a) : a.kind === 'expense' ? `total ${M.fmtMoney(M.expenseTotal(a))}${a.completedOn ? ' · paid ' + M.shortDate(a.completedOn) : ''}` : a.completedOn ? `finished ${M.shortDate(a.completedOn)}` : 'open';
         return `<button class="hit" data-id="${a.id}" role="listitem"><span>${esc(a.title)}</span>
@@ -318,5 +339,44 @@ export function openSearch(onPick) {
       onPick(a, date);
     });
     run(); setTimeout(() => input.focus(), 50);
+  });
+}
+
+// NOTE editor: a title, free text, and an optional checklist. "Show on Today" pins it to the day screen.
+export function openNoteEditor(atomId = null, preset = {}) {
+  const a = atomId ? S.atoms.find(x => x.id === atomId) : null;
+  const v = a || { title: '', note: '', items: [], pinned: false, ...preset };
+  const itemsText = (v.items || []).map(i => (typeof i === 'string' ? i : i.text)).join('\n');
+  openSheet(`<h2>${a ? 'EDIT NOTE' : 'NEW NOTE'}</h2>
+  <form class="form" id="noteForm" autocomplete="off">
+    <label for="n-title">TITLE</label>
+    <input class="field" id="n-title" name="title" maxlength="120" required value="${esc(v.title)}" placeholder="books to read, recipes, quotes…">
+    <label for="n-items">LIST — one per line (optional)</label>
+    <textarea class="field" id="n-items" name="items" rows="5" maxlength="4000">${esc(itemsText)}</textarea>
+    <label for="n-text">TEXT (optional)</label>
+    <textarea class="field" id="n-text" name="note" rows="4" maxlength="4000">${esc(v.note || '')}</textarea>
+    <label>ON TODAY</label>
+    <div class="seg">${radio('pinned', '', 'ONLY IN NOTES', !v.pinned)}${radio('pinned', '1', 'SHOW ON TODAY EVERY DAY', !!v.pinned)}</div>
+    <div class="actions">
+      ${a ? `<button type="button" class="btn vt warn" data-x="delete" style="margin-right:auto">DELETE</button>` : ''}
+      <button type="button" class="btn vt" data-x="cancel">CANCEL</button>
+      <button type="submit" class="btn solid vt">SAVE</button>
+    </div>
+  </form>`, root => {
+    const f = root.querySelector('#noteForm');
+    if (!a) setTimeout(() => f.title.focus(), 50);
+    root.querySelector('[data-x="cancel"]').onclick = closeSheet;
+    root.querySelector('[data-x="delete"]')?.addEventListener('click', async () => {
+      await A.undoable('delete', () => A.deleteAtom(a.id)); closeSheet(); toast('note deleted', { undo: true });
+    });
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const title = f.title.value.trim(); if (!title) return;
+      const old = a?.items || [];
+      const items = f.items.value.split('\n').map(t => t.trim()).filter(Boolean).map(text => old.find(i => i.text === text) || { id: M.uid('li'), text, done: false });
+      const data = { kind: 'note', title, note: f.note.value.trim(), items, pinned: !!f.pinned.value };
+      await A.undoable('note', () => a ? A.updateAtom(a.id, data) : A.addAtom(data));
+      closeSheet(); toast(a ? 'saved' : data.pinned ? 'note added · also on Today' : 'note added', { undo: true });
+    });
   });
 }
