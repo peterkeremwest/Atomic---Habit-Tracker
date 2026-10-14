@@ -1,10 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Atomic back office (v0.2.2). One stack holds everything Atomic needs in AWS:
+  Atomic back office (v0.2.5). One stack holds everything Atomic needs in AWS:
   its own badge reader on Forge's shared Cognito badge office, a DynamoDB filing
   cabinet, an HTTP API front desk with the Cognito bouncer, one data clerk (Lambda),
-  plus the safety nets: a monthly budget alarm, an error alarm and 30-day logs.
+  a second clerk for lists shared between two people (v0.2.5), plus the safety nets:
+  a monthly budget alarm, error alarms and 30-day logs.
 
 Parameters:
   CognitoUserPoolId:
@@ -118,6 +119,45 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${DataFunction}
       RetentionInDays: 30                   # the sign-in log is shredded after a month, not kept forever
 
+  # ---------- the shared-lists clerk (v0.2.5): lists two people keep together ----------
+  SharedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/shared/
+      Handler: shared.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref AtomicTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AtomicTable
+      Events:
+        # Explicit methods only (see the note on DataFunction).
+        GetShared:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /shared, Method: GET }
+        PostSharedList:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /shared/lists, Method: POST }
+        PostSharedInvite:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: '/shared/lists/{id}/invite', Method: POST }
+        PostSharedLeave:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: '/shared/lists/{id}/leave', Method: POST }
+        PostSharedJoin:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /shared/join, Method: POST }
+        PostSharedItems:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /shared/items/batch, Method: POST }
+
+  SharedFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SharedFunction}
+      RetentionInDays: 30
+
   # ---------- how it's reported on: alarms ----------
   AlertTopic:
     Type: AWS::SNS::Topic
@@ -135,6 +175,22 @@ Resources:
       Namespace: AWS/Lambda
       MetricName: Errors
       Dimensions: [{ Name: FunctionName, Value: !Ref DataFunction }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  SharedErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlertEmail
+    Properties:
+      AlarmDescription: Atomic's shared-lists clerk failed at least 3 times in 5 minutes.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref SharedFunction }]
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1

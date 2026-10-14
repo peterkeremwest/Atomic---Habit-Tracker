@@ -341,3 +341,19 @@ a.btn { text-decoration: none; display: inline-block; }
 nav.tabs a { white-space: nowrap; }
 @media (max-width: 420px) { nav.tabs a { font-size: 16px; letter-spacing: 0; } }
 @media (max-width: 350px) { nav.tabs a { font-size: 14px; } }
+
+/* lists shared with one other person (v0.2.5) */
+.sharedcard .duo { flex: none; margin: 4px 4px 0 0; color: var(--muted); }
+.sharedcard .itxt { min-width: 0; overflow-wrap: anywhere; }
+.sharedcard .by { margin-left: auto; padding-left: 8px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.sharedcard .itxt + .rm { margin-left: auto; }
+.sharedcard .by + .rm { margin-left: 4px; }
+.sharedcard .rm { color: var(--dim); font-size: 20px; min-width: 32px; min-height: 28px; }
+.sharedcard .rm:active { color: var(--warn); }
+.joincode { font-size: 44px; letter-spacing: .14em; text-align: center; padding: 14px 0; margin: 12px 0; border: 1px dashed var(--line); user-select: all; }
+
+/* links (v0.2.5): inside item text, and the button for a list's own link */
+.ilink { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--dim); overflow-wrap: anywhere; }
+.items li.done .ilink { color: var(--muted); }
+.chiplink { color: var(--fg); border: 1px solid var(--line); padding: 0 8px; font-size: 15px; text-decoration: none; line-height: 1.5; }
+.chiplink:active { background: rgba(var(--fg-rgb), .2); }

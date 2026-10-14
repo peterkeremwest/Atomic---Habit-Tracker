@@ -14,6 +14,9 @@ import { openEditor, openMenu, openRenameCategory, openHelp, openSearch } from '
 import { openAccount, askSignOut } from './views/account.js';
 import * as Sync from './sync.js';
 import * as Auth from './auth.js';
+import * as Shared from './shared.js';
+import { openSharedMenu, openJoin } from './views/shared.js';
+import { cloudReady } from './config.js';
 
 const ROUTES = { today: Today, notes: Notes, calendar: Calendar, review: Review, habits: Habits, elements: Elements, sys: System };
 const main = document.querySelector('main');
@@ -49,6 +52,8 @@ function render() {
 
 function go() {
   const r = location.hash.replace(/^#\/?/, '') || 'today';
+  const join = r.match(/^join\/([A-Za-z0-9]+)/); // a link someone sent to share a list: #/join/CODE
+  if (join) { history.replaceState(null, '', '#/today'); S.ui.route = 'today'; render(); openJoin(join[1]); return; }
   S.ui.route = ROUTES[r] ? r : 'today';
   window.scrollTo(0, 0);
   render();
@@ -152,6 +157,18 @@ const actions = {
     toast(n.pinned ? 'removed from Today' : 'shows on Today every day', { undo: true });
   },
   newnote: () => openEditor(null, { kind: 'note' }),
+  async sitem(d) {
+    const it = S.sitems.find(x => x.id === d.id); if (!it) return;
+    await A.undoable('sitem', () => Shared.toggleItem(d.id));
+    toast(`${it.done ? 'unchecked' : 'checked'} · ${it.text}`, { undo: true });
+  },
+  async sremove(d) {
+    const it = S.sitems.find(x => x.id === d.id); if (!it) return;
+    await A.undoable('sremove', () => Shared.removeItem(d.id));
+    toast(`removed · ${it.text}`, { undo: true });
+  },
+  smenu: d => openSharedMenu(d.id),
+  joinshared: () => openJoin(),
   lowonly() { S.ui.lowOnly = !S.ui.lowOnly; render(); },
   async day(d) {
     const cur = A.logsFor(d.id).get(d.date)?.status;
@@ -207,6 +224,11 @@ main.addEventListener('change', async e => {
   const t = e.target;
   if (t.dataset.action === 'theme') await A.setSettings({ theme: t.value });
   if (t.dataset.action === 'scanlines') await A.setSettings({ scanlines: t.checked });
+  if (t.dataset.action === 'sharedname') {
+    await A.setSettings({ sharedName: t.value.trim() });
+    await Shared.touchLists(); // so the other person sees the new name
+    toast('name saved');
+  }
   if (t.id === 'importFile' && t.files[0]) {
     try {
       const n = await A.importData(JSON.parse(await t.files[0].text()));
@@ -240,6 +262,11 @@ main.addEventListener('submit', async e => {
     toast(`${costs.length === 1 ? 'cost' : costs.length + ' costs'} added · total ${M.fmtMoney(M.expenseTotal(a))}`, { undo: true });
     setTimeout(() => main.querySelector(`form[data-form=addcost][data-id="${f.dataset.id}"] input`)?.focus(), 0);
   }
+  if (f.dataset.form === 'addsitem') {
+    const text = f.t.value.trim(); if (!text) return;
+    await Shared.addItems(f.dataset.id, text.split(','));
+    setTimeout(() => main.querySelector(`form[data-form=addsitem][data-id="${f.dataset.id}"] input`)?.focus(), 0);
+  }
   if (f.dataset.form === 'additem') {
     const text = f.t.value.trim(); if (!text) return;
     await A.addListItems(f.dataset.id, text.split(',')); 
@@ -247,7 +274,7 @@ main.addEventListener('submit', async e => {
   }
 });
 
-onLongPress(main, '.row', row => openMenu(row.dataset.atom));
+onLongPress(main, '.row', row => (row.dataset.shared ? openSharedMenu(row.dataset.shared) : openMenu(row.dataset.atom)));
 
 // quick add
 quick.querySelector('form').addEventListener('submit', async e => {
@@ -258,6 +285,13 @@ quick.querySelector('form').addEventListener('submit', async e => {
   const parsed = M.parseQuickAdd(text, S.elements, S.isotopes, M.todayKey(), S.ui.date);
   for (const p of parsed) if (!p.elementId && !p.newCategory && S.ui.filterEl) p.elementId = S.ui.filterEl;
   if (parsed.every(p => !p.title)) return toast('add a title too');
+  const sharedP = parsed.find(p => p.kind === 'shared'); // "#shared errands: milk, stamps"
+  if (sharedP) {
+    if (!cloudReady() || !Auth.signedIn()) { toast('sign in first to make a shared list'); return openAccount('signin'); }
+    const r = await A.undoable('shared', () => Shared.addFromQuick(sharedP.title, sharedP.items));
+    input.value = '';
+    return toast(r.appended ? `added ${r.appended} to ${r.list.title}` : `shared list added · tap ⋯ on it to invite someone`, { undo: true });
+  }
   const newCats = [...new Set(parsed.map(p => p.newCategory).filter(Boolean))];
   const made = await A.undoable('add', () => A.addParsed(parsed));
   input.value = '';
@@ -369,6 +403,7 @@ onChange(render);
     main.innerHTML = `<p class="overdue">&gt; storage unavailable: ${esc(err.message || err)}</p><p class="dim">private browsing can block on-device storage.</p>`;
     return;
   }
+  await Auth.loadAuth().catch(() => {});
   paintStatus();
   typeTitle();
   go();

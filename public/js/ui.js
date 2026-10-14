@@ -1,6 +1,50 @@
 // Atomic — small shared UI helpers.
+import { cleanUrl } from './model.js';
 
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Text with any web addresses turned into tappable links (http, https and www. only). Everything else stays escaped text.
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<]+/gi;
+export function linkify(text) {
+  return esc(text).replace(URL_RE, m => {
+    let url = m.split(/&(?:quot|#39|lt|gt);/)[0].replace(/[.,;:!?)\]]+$/, ''); // stop at a quote, drop trailing punctuation
+    const rest = m.slice(url.length);
+    const href = /^www\./i.test(url) ? 'https://' + url : url;
+    let shown = url.replace(/&amp;/g, '&').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    if (shown.length > 34) shown = shown.slice(0, 33) + '…';
+    return `<a class="ilink" href="${href}" target="_blank" rel="noopener noreferrer">${esc(shown)}</a>${rest}`;
+  });
+}
+// The "▶ store.com" button on a list or note that has a link of its own
+export function linkChip(url) {
+  let host = 'link';
+  try { host = new URL(url).hostname.replace(/^www\./, '') || host; } catch { /* keep "link" */ }
+  return `<a class="chiplink vt" href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open link to ${esc(host)}">▶ ${esc(host)}</a>`;
+}
+// Sheet for adding, changing or removing a list's link. onSave(url) gets '' when it is removed.
+export function openLinkSheet({ title, current = '', onSave }) {
+  openSheet(`<h2>LINK FOR ${esc(String(title).toUpperCase())}</h2>
+    <form class="form" id="linkForm" autocomplete="off">
+      <p class="dim" style="font-size:13px;margin:0 0 4px">a web address, like a shopping list in another app. it shows as a button on the list.</p>
+      <label for="lk-url">WEB ADDRESS</label>
+      <input class="field" id="lk-url" name="u" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://" value="${esc(current)}">
+      <p class="overdue" id="lk-err" role="alert" style="font-size:13px;min-height:1em;margin:8px 0 0"></p>
+      <div class="actions"><button type="button" class="btn vt" data-x="cancel">CANCEL</button>
+        ${current ? '<button type="button" class="btn vt warn" data-x="remove">REMOVE</button>' : ''}<button type="submit" class="btn solid vt">SAVE</button></div>
+    </form>`, root => {
+    const f = root.querySelector('#linkForm'), err = root.querySelector('#lk-err');
+    root.querySelector('[data-x=cancel]').onclick = closeSheet;
+    const rm = root.querySelector('[data-x=remove]');
+    if (rm) rm.onclick = async () => { closeSheet(); await onSave(''); };
+    setTimeout(() => f.u.focus(), 50);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const url = cleanUrl(f.u.value);
+      if (url === null) { err.textContent = "that doesn't look like a web address"; return; }
+      closeSheet(); await onSave(url);
+    });
+  });
+}
 
 let toastTimer, undoHandler = null;
 export const setUndoHandler = fn => { undoHandler = fn; };

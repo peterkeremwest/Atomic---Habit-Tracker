@@ -4,6 +4,7 @@ import { APP_VERSION } from '../version.js';
 import { esc } from '../ui.js';
 import { cloudReady } from '../config.js';
 import * as auth from '../auth.js';
+import * as Shared from '../shared.js';
 
 function ago(ms) {
   const s = Math.round((Date.now() - ms) / 1000);
@@ -26,11 +27,24 @@ function account() {
     <div class="actions" style="justify-content:flex-start"><button class="btn vt" data-action="syncnow">SYNC NOW</button><button class="btn vt" data-action="signout">SIGN OUT</button></div>`;
 }
 
+function sharing() {
+  if (!cloudReady()) return '';
+  const head = `<div class="section vt"><span>// SHARED LISTS</span></div>`;
+  if (!auth.signedIn()) return head + `<p class="dim" style="font-size:13px">sign in to keep a list with one other person.</p>`;
+  return head + `<p class="dim" style="font-size:13px">keep a list with one other person, like errands or groceries. you both can add, check off and delete, and every checked item shows who did it. make one by typing <span class="tag">#shared errands: milk, stamps</span> on Today.</p>
+    <label for="sharedName">YOUR NAME IN SHARED LISTS</label>
+    <input class="field" id="sharedName" data-action="sharedname" maxlength="30" autocomplete="off" placeholder="${esc(Shared.defaultName())}" value="${esc(S.settings.sharedName || '')}">
+    <div class="kv"><span>shared lists</span><span>${Shared.liveLists().length}</span></div>
+    <div class="actions" style="justify-content:flex-start"><button class="btn solid vt" data-action="joinshared">JOIN WITH A CODE</button></div>`;
+}
+
 export function render({ canInstall }) {
   const themes = ['green', 'amber', 'red', 'pink'];
   return `<div class="sys">
     <div class="section vt"><span>// ACCOUNT</span></div>
     ${account()}
+
+    ${sharing()}
 
     <div class="section vt"><span>// DISPLAY</span></div>
     <div class="seg" role="radiogroup" aria-label="Theme">

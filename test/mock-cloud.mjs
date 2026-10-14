@@ -2,10 +2,12 @@
 // plus the REAL data clerk (backend/src/data/data.js) over an in-memory table. Listens on :8766.
 import http from 'node:http';
 import { makeHandler } from '../backend/src/data/data.js';
+import { makeHandler as makeShared } from '../backend/src/shared/shared.js';
 import { fakeDdb } from './fake-ddb.mjs';
 
 const ddb = fakeDdb();
 const clerk = makeHandler(ddb, 'AtomicTable');
+const sharedClerk = makeShared(ddb, 'AtomicTable'); // lists shared between two people
 const users = new Map(); // email -> { password, confirmed, sub }
 const b64 = o => Buffer.from(JSON.stringify(o)).toString('base64url');
 const token = u => `${b64({ alg: 'none' })}.${b64({ sub: u.sub, email: u.email, exp: Date.now() / 1000 + 3600 })}.sig`;
@@ -42,8 +44,10 @@ http.createServer(async (req, res) => {
   if (target) { const r = cognito(target.split('.').pop(), JSON.parse(raw || '{}')); return send(r.status || 200, r.body); }
   // the JWT authorizer's job: check the bearer token, hand the clerk the verified sub
   const tok = (req.headers.authorization || '').replace(/^Bearer /, '');
-  let sub; try { sub = JSON.parse(Buffer.from(tok.split('.')[1], 'base64url')).sub; } catch { return send(401, { message: 'Unauthorized' }); }
-  const out = await clerk({ rawPath: url.pathname, queryStringParameters: Object.fromEntries(url.searchParams), body: raw,
-    requestContext: { http: { method: req.method }, authorizer: { jwt: { claims: { sub } } } } });
+  let claims; try { claims = JSON.parse(Buffer.from(tok.split('.')[1], 'base64url')); } catch { return send(401, { message: 'Unauthorized' }); }
+  const sub = claims.sub;
+  const route = url.pathname.startsWith('/shared') ? sharedClerk : clerk;
+  const out = await route({ rawPath: url.pathname, queryStringParameters: Object.fromEntries(url.searchParams), body: raw,
+    requestContext: { http: { method: req.method }, authorizer: { jwt: { claims: { sub, email: claims.email } } } } });
   res.writeHead(out.statusCode, { ...cors, ...out.headers }); res.end(out.body);
 }).listen(8766, () => console.log('mock cloud on :8766'));

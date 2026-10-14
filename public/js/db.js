@@ -4,8 +4,11 @@
 import { nowIso, SCHEMA_VERSION } from './model.js';
 
 const DB_NAME = 'atomic';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2 (Atomic v0.2.5) adds the two shared-list stores
 export const STORES = ['elements', 'isotopes', 'atoms', 'logs'];
+// Lists shared with another person. Kept apart from STORES on purpose: they are not part of backups or the
+// normal sync, and they travel to the cloud through their own routes.
+export const SHARED_STORES = ['slists', 'sitems'];
 
 let dbp;
 function open() {
@@ -14,7 +17,7 @@ function open() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const s of STORES) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+      for (const s of [...STORES, ...SHARED_STORES]) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
       if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'seq', autoIncrement: true });
     };
@@ -53,6 +56,14 @@ export async function putQuiet(store, records) {
   const db = await open();
   const tx = db.transaction(store, 'readwrite');
   for (const r of records) tx.objectStore(store).put(r);
+  await done(tx);
+}
+// Remove records quietly (a shared list you are no longer part of).
+export async function removeQuiet(store, ids) {
+  if (!ids.length) return;
+  const db = await open();
+  const tx = db.transaction(store, 'readwrite');
+  for (const id of ids) tx.objectStore(store).delete(id);
   await done(tx);
 }
 // Replace a store's whole contents quietly (first sign-in on a fresh device adopts the cloud copy).
@@ -118,7 +129,7 @@ export async function exportAll() {
 
 export async function wipe() {
   const db = await open();
-  const all = [...STORES, 'meta', 'outbox'];
+  const all = [...STORES, ...SHARED_STORES, 'meta', 'outbox'];
   const tx = db.transaction(all, 'readwrite');
   for (const s of all) tx.objectStore(s).clear();
   await done(tx);

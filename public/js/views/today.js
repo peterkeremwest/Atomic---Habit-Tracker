@@ -1,7 +1,9 @@
 // TODAY — everything for the chosen day, grouped by how often it repeats. Checked items stay visible.
 import { S, live, logsFor, elementById, isotopeById, timerLeft, timerRunning, leftovers } from '../state.js';
 import * as M from '../model.js';
-import { esc, foldSection } from '../ui.js';
+import { esc, foldSection, linkify, linkChip } from '../ui.js';
+import * as Shared from '../shared.js';
+import { sharedCard } from './shared.js';
 
 const MARK = { done: '✓', met: '✓', partial: '~', skipped: '–' };
 
@@ -17,7 +19,7 @@ function steps(a) {
   if (!a.items?.length) return '';
   return `<ul class="items steps">${a.items.map(i => `<li class="${i.done ? 'done' : ''}">
     <button class="chk small vt" data-action="item" data-id="${a.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} step ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-    <span class="itxt">${esc(i.text)}</span></li>`).join('')}</ul>`;
+    <span class="itxt">${linkify(i.text)}</span></li>`).join('')}</ul>`;
 }
 
 export function atomRow(a, k, { just = null, drag = true } = {}) {
@@ -95,14 +97,14 @@ function listCard(l, k, just, drag = true) {
       <button class="chk vt" data-action="toggle" data-id="${l.id}" aria-label="${all ? 'Uncheck all in' : 'Check all in'} ${esc(l.title)}">[<span class="mark">${all ? '✓' : '&nbsp;'}</span>]</button>
       <div class="body">
         <button class="title" data-action="edit" data-id="${l.id}">${l.focusOn === k ? '<span class="pin vt">★</span> ' : ''}${esc(l.title)}</button>
-        <div class="meta">${catLabel(l)}<span>${done} of ${l.items.length} checked</span></div>
+        <div class="meta">${catLabel(l)}<span>${done} of ${l.items.length} checked</span>${l.link ? linkChip(l.link) : ''}</div>
       </div>
       ${handle(l, drag)}
       <button class="more" data-action="menu" data-id="${l.id}" aria-label="More options for ${esc(l.title)}">⋯</button>
     </div>
     <ul class="items">${l.items.map(i => `<li class="${i.done ? 'done' : ''}">
       <button class="chk small vt" data-action="item" data-id="${l.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${esc(i.text)}</span></li>`).join('')}
+      <span class="itxt">${linkify(i.text)}</span></li>`).join('')}
     </ul>
     <form class="additem" data-form="additem" data-id="${l.id}"><input class="field" name="t" maxlength="80" placeholder="+ add item" aria-label="Add item to ${esc(l.title)}"></form>
   </div>`;
@@ -147,7 +149,7 @@ export function noteCard(n, { drag = true, where = 'today' } = {}) {
       <span class="nmark vt" aria-hidden="true">${n.pinned ? '★' : '¶'}</span>
       <div class="body">
         <button class="title" data-action="edit" data-id="${n.id}">${esc(n.title)}</button>
-        ${items.length ? `<div class="meta"><span>${done} of ${items.length} checked</span></div>` : ''}
+        ${items.length || n.link ? `<div class="meta">${items.length ? `<span>${done} of ${items.length} checked</span>` : ''}${n.link ? linkChip(n.link) : ''}</div>` : ''}
       </div>
       ${where === 'notes' ? `<button class="btn vt npin ${n.pinned ? 'on' : ''}" data-action="notepin" data-id="${n.id}" aria-pressed="${!!n.pinned}" aria-label="${n.pinned ? 'Remove from Today' : 'Show on Today every day'}">${n.pinned ? '★ TODAY' : '☆ TODAY'}</button>` : ''}
       ${handle(n, drag)}
@@ -155,14 +157,14 @@ export function noteCard(n, { drag = true, where = 'today' } = {}) {
     </div>
     ${items.length ? `<ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
       <button class="chk small vt" data-action="item" data-id="${n.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${esc(i.text)}</span></li>`).join('')}</ul>` : ''}
-    ${n.note ? `<p class="ntext">${esc(n.note)}</p>` : ''}
+      <span class="itxt">${linkify(i.text)}</span></li>`).join('')}</ul>` : ''}
+    ${n.note ? `<p class="ntext">${linkify(n.note)}</p>` : ''}
     <form class="additem" data-form="additem" data-id="${n.id}"><input class="field" name="t" maxlength="120" placeholder="+ add to ${esc(n.title)}" aria-label="Add to ${esc(n.title)}"></form>
   </div>`;
 }
 
 const SECTIONS = [
-  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['ongoing', 'ONGOING'], ['list', 'LISTS'], ['expense', 'EXPENSES'], ['note', 'NOTES'],
+  ['focus', 'FOCUS'], ['schedule', 'SCHEDULE'], ['daily', 'DAILY'], ['weekly', 'WEEKLY'], ['monthly', 'MONTHLY'], ['once', 'ONE-TIME'], ['ongoing', 'ONGOING'], ['list', 'LISTS'], ['shared', 'SHARED'], ['expense', 'EXPENSES'], ['note', 'NOTES'],
 ];
 
 export function renderTop() { return dayNav(S.ui.date); }
@@ -200,6 +202,8 @@ export function render({ just } = {}) {
 
   const bySection = new Map(SECTIONS.map(([key]) => [key, []]));
   for (const a of shown) bySection.get(a.focusOn === k && a.kind !== 'block' && a.kind !== 'note' ? 'focus' : M.frequency(a)).push(a);
+  // lists shared with another person: on Today and later days, not under a category or energy filter
+  if (!filterEl && !lowOnly && k >= real) bySection.set('shared', Shared.liveLists());
   bySection.get('schedule').sort((x, y) => x.start.localeCompare(y.start));
   const clash = M.clashes(bySection.get('schedule'));
 
@@ -208,9 +212,9 @@ export function render({ just } = {}) {
     const list = bySection.get(key);
     const n = key === 'schedule' ? list.length
       : key === 'expense' ? `${M.fmtMoney(list.reduce((t, a) => t + M.expenseTotal(a), 0))} total`
-      : key === 'note' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
+      : key === 'note' || key === 'shared' ? list.length : `${list.filter(a => ['done', 'met'].includes(M.statusFor(a, logsFor(a.id), k))).length} of ${list.length}`;
     let rows = list.map(a => key === 'schedule' ? blockRow(a, k, clash.get(a.id))
-      : a.kind === 'note' ? noteCard(a) : a.kind === 'list' ? listCard(a, k, just) : a.kind === 'expense' ? expenseCard(a, k, just) : atomRow(a, k, { just })).join('');
+      : key === 'shared' ? sharedCard(a) : a.kind === 'note' ? noteCard(a) : a.kind === 'list' ? listCard(a, k, just) : a.kind === 'expense' ? expenseCard(a, k, just) : atomRow(a, k, { just })).join('');
     if (key === 'ongoing' && k === real) {
       if (finishedOngoing) rows += `<button class="btn vt moveleft" data-action="ongoingdone">${showDone ? 'HIDE FINISHED ONES' : `SHOW ${finishedOngoing} FINISHED`}</button>`;
     }
@@ -222,7 +226,7 @@ export function render({ just } = {}) {
     return foldSection('today:' + key, title, n, rows, S.ui.folded.has('today:' + key));
   }).join('');
 
-  const nothingAtAll = !live(S.atoms).length;
+  const nothingAtAll = !live(S.atoms).length && !bySection.get('shared').length;
   return `
     <div class="progress" aria-label="${doneN} of ${counted.length} done">
       <div class="bar"><i style="width:${pct}%"></i></div>

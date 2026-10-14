@@ -8,8 +8,9 @@ One SAM stack (`template.yaml`) with everything Atomic uses in AWS:
 | `AtomicTable` | DynamoDB, one partition per user (`pk = USER#<sub>`), point-in-time recovery on, kept even if the stack is deleted | The filing cabinet, one drawer per user |
 | `HttpApi` | HTTP API with the Cognito JWT authorizer, CORS for the live site + localhost, throttled to 10 requests/second | The front desk with the bouncer |
 | `DataFunction` | Lambda (`nodejs24.x`, arm64), `src/data/data.js` | The data clerk |
-| `DataFunctionLogs` | Its CloudWatch logs, kept 30 days | The sign-in log, shredded after a month |
-| `DataErrorsAlarm` + `AlertTopic` | Emails you if the clerk fails 3+ times in 5 minutes | Security camera with a pager |
+| `SharedFunction` | Lambda (`nodejs24.x`, arm64), `src/shared/shared.js` (v0.2.5): lists two people keep together | A second clerk, for the shared files |
+| `DataFunctionLogs` / `SharedFunctionLogs` | Its CloudWatch logs, kept 30 days | The sign-in log, shredded after a month |
+| `DataErrorsAlarm` / `SharedErrorsAlarm` + `AlertTopic` | Emails you if either clerk fails 3+ times in 5 minutes | Security camera with a pager |
 | `MonthlyBudget` | Emails you at 80% of $5 actual spend, or if the month is forecast to pass $5 | The accountant's warning note |
 
 The alarms and the budget are only created when you give an `AlertEmail`.
@@ -19,6 +20,19 @@ The alarms and the budget are only created when you give an `AlertEmail`.
 - `GET /data` returns everything in your drawer: `{ items: { elements, isotopes, atoms, logs }, cursor }`
 - `GET /data?since=<cursor>` returns only what arrived after the last pull
 - `POST /data/batch` with `{ records: [{ store, record }] }` (up to 25) saves records. The newest `updatedAt` wins: an older copy never overwrites a newer one. Deletes are soft (`deletedAt`), so there is no DELETE route.
+
+### Shared lists (v0.2.5, `SharedFunction`)
+
+A shared list lives in its own drawer (`pk = LIST#<id>`: a `META` row plus one `ITEM#<id>` row per item) and is limited to two members. Each member also has a pointer row (`USER#<sub>`, `SHARED#<id>`). Every route checks that the caller is a member.
+
+- `GET /shared[?since=<cursor>]` returns `{ memberOf, lists, items, cursor }` for your shared lists (a list you just joined sends all its items)
+- `POST /shared/lists` creates or updates (rename / soft delete, newest wins) a list: `{ id, title, updatedAt, deletedAt, displayName }`
+- `POST /shared/lists/{id}/invite` returns `{ code, expiresAt }` (8 characters, 48 hours, works once)
+- `POST /shared/join` with `{ code, displayName }` adds you as the second member
+- `POST /shared/lists/{id}/leave` removes you; when the last person leaves, the list is soft-deleted
+- `POST /shared/items/batch` with `{ listId, records }` (up to 25 items, newest wins, who checked each one is kept in `doneBy`)
+
+Tests: `node test/shared.test.mjs` (needs `npm i` in `backend/src/shared`, dev-only).
 
 ## First deploy (from your own terminal, not from Claude's shell)
 

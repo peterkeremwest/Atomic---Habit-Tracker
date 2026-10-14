@@ -6,6 +6,7 @@ import * as M from './model.js';
 
 export const S = {
   elements: [], isotopes: [], atoms: [], logs: [],
+  slists: [], sitems: [], // lists shared with another person, and their items (see shared.js)
   settings: { theme: 'green', scanlines: true },
   ui: { folded: new Set(), route: 'today', date: M.todayKey(), calMonth: M.todayKey().slice(0, 7), filterEl: null, lowOnly: false, openEl: null },
   pending: 0,
@@ -41,7 +42,7 @@ export const isotopesOf = elId => live(S.isotopes).filter(i => i.elementId === e
 async function refreshPending() { S.pending = await db.outboxCount(); }
 
 export async function load() {
-  for (const s of db.STORES) S[s] = await db.getAll(s);
+  for (const s of [...db.STORES, ...db.SHARED_STORES]) S[s] = await db.getAll(s);
   if (!S.elements.length && !(await db.getMeta('seeded'))) {
     const { elements, isotopes } = M.seedRecords();
     await db.put('elements', elements);
@@ -97,7 +98,7 @@ export async function undo() {
   return true;
 }
 
-async function save(store, rec) {
+export async function save(store, rec) {
   if (undoRec) {
     const key = store + '|' + rec.id;
     if (!undoRec.has(key)) { const prev = S[store].find(r => r.id === rec.id); undoRec.set(key, { store, id: rec.id, prev: prev ? { ...prev } : null }); }
@@ -369,7 +370,7 @@ export async function resetAll({ keepSettings = false } = {}) {
   const keep = S.settings;
   await db.wipe();
   if (keepSettings) await db.setMeta('settings', keep);
-  for (const s of db.STORES) S[s] = [];
+  for (const s of [...db.STORES, ...db.SHARED_STORES]) S[s] = [];
   await load(); emit();
 }
 

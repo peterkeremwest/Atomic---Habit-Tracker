@@ -57,7 +57,7 @@ async def main():
         await pg.click('.quick [data-x=help]'); await pg.wait_for_selector('dialog[open] .help')
         await pg.screenshot(path=OUT + '3-help.png'); await pg.click('dialog [data-x=ok]')
         # editor on a time block
-        await pg.locator('.row.block .title', has_text=re.compile('^work$')).click(); await pg.wait_for_selector('dialog[open] #atomForm')
+        await pg.locator('.row.block .title', has_text=re.compile('^work( ● NOW)?$')).click(); await pg.wait_for_selector('dialog[open] #atomForm')
         assert await pg.locator('#f-start').input_value() == '17:00'
         await pg.screenshot(path=OUT + '4-editor-block.png')
         await pg.click('dialog [data-x=cancel]')

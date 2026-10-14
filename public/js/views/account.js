@@ -84,6 +84,7 @@ async function finish() {
   try {
     const cloudHad = await sync.afterSignIn();
     toast(cloudHad ? 'signed in · your cloud data is on this device now' : 'signed in · this device is now backed up to the cloud');
+    (await import('./shared.js')).resumeJoin(); // a join link opened before signing in
   } catch (x) {
     toast('signed in, but the first sync failed. it will try again');
   }

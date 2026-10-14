@@ -2,7 +2,7 @@
 import { S, live, isotopesOf } from '../state.js';
 import * as A from '../state.js';
 import * as M from '../model.js';
-import { esc, openSheet, closeSheet, toast } from '../ui.js';
+import { esc, openSheet, closeSheet, toast, openLinkSheet } from '../ui.js';
 import { dateField, wireDateFields, openDateSheet } from './datepick.js';
 
 const radio = (name, value, label, checked) =>
@@ -194,7 +194,7 @@ export function openMenu(atomId) {
   const s = M.statusFor(a, A.logsFor(a.id), k);
   const items = [];
   if (a.kind === 'note') {
-    items.push(['pin', a.pinned ? 'Remove from Today' : 'Show on Today every day']);
+    items.push(['pin', a.pinned ? 'Remove from Today' : 'Show on Today every day'], ['link', a.link ? 'Change or remove link' : 'Add a link']);
     if (a.items?.some(i => i.done)) items.push(['cleardone', 'Remove checked items']);
   } else if (a.kind === 'task') {
     items.push(['toggle', a.completedOn ? 'Mark not done' : 'Mark done']);
@@ -203,7 +203,7 @@ export function openMenu(atomId) {
   } else if (a.kind === 'expense') {
     items.push(['toggle', a.completedOn ? 'Mark not paid' : 'Mark paid']);
   } else if (a.kind === 'list') {
-    items.push(['toggle', a.completedOn ? 'Uncheck everything' : 'Check everything']);
+    items.push(['toggle', a.completedOn ? 'Uncheck everything' : 'Check everything'], ['link', a.link ? 'Change or remove link' : 'Add a link']);
     if (a.items.some(i => i.done)) items.push(['cleardone', 'Remove checked items']);
   } else if (a.kind === 'habit' && future) {
     // future days: nothing to check off yet
@@ -225,6 +225,7 @@ export function openMenu(atomId) {
       const x = e.target.closest('button')?.dataset.x;
       if (!x) return;
       if (x === 'edit') return openEditor(a.id);
+      if (x === 'link') return openLinkSheet({ title: a.title, current: a.link || '', onSave: async url => { await A.undoable('link', () => A.updateAtom(a.id, { link: url })); toast(url ? 'link saved' : 'link removed', { undo: true }); } });
       if (x === 'moveto') return openDateSheet('MOVE TO A DAY', a.dueDate || M.addDays(M.todayKey(), 1), async d => {
         await A.undoable('move', () => A.moveTo(a.id, d));
         toast(`moved to ${M.prettyDate(d)} · ${M.relativeDay(d)}`, { undo: true });
@@ -301,6 +302,7 @@ export function openHelp() {
       ${ex('#timeblock date 2pm-7pm, movie 5pm-8pm', 'several time blocks')}
       ${ex('work 9am-5pm weekdays', 'repeating time block')}
       ${ex('#list groceries: eggs, soap, juice', 'checklist')}
+      ${ex('#shared errands: milk, stamps', 'a list you share with one other person')}
       ${ex('car repair: tires $10, brakes $50', 'expense list with a total')}
       ${ex('#expense lunch $12', 'adds a cost to your Expenses list')}
       <p class="dim">adding to a list that's still open adds the new items to it. the same goes for expense lists.</p>

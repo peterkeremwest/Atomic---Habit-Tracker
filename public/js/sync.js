@@ -6,6 +6,7 @@ import { CLOUD, cloudReady } from './config.js';
 import * as auth from './auth.js';
 import * as db from './db.js';
 import * as A from './state.js';
+import * as Shared from './shared.js';
 
 const { S } = A;
 const BATCH = 25;
@@ -16,7 +17,7 @@ const statusHooks = new Set();
 export const onStatus = fn => statusHooks.add(fn);
 const set = patch => { Object.assign(S.sync, patch); statusHooks.forEach(fn => fn()); };
 
-async function api(method, path, body, retry = true) {
+export async function api(method, path, body, retry = true) {
   const token = await auth.idToken();
   if (!token) throw new Error('not signed in');
   const res = await fetch(CLOUD.apiUrl.replace(/\/$/, '') + path, {
@@ -25,7 +26,13 @@ async function api(method, path, body, retry = true) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (res.status === 401 && retry) { await auth.idToken(); return api(method, path, body, false); }
-  if (!res.ok) throw new Error(`the back office answered ${res.status}`);
+  if (!res.ok) {
+    const said = await res.json().catch(() => null);
+    const err = new Error(said?.error || `the back office answered ${res.status}`);
+    err.status = res.status;
+    err.fromClerk = !!said?.error; // a clerk answered (as opposed to the front desk saying "no such route")
+    throw err;
+  }
   return res.json();
 }
 
@@ -35,9 +42,59 @@ async function push() {
   const maxSeq = Math.max(...box.map(b => b.seq));
   const keys = [...new Map(box.map(b => [b.store + '|' + b.id, b])).values()]; // each record once
   const records = keys.map(({ store, id }) => ({ store, record: S[store]?.find(r => r.id === id) })).filter(r => r.record);
-  for (let i = 0; i < records.length; i += BATCH) await api('POST', '/data/batch', { records: records.slice(i, i + BATCH) });
+  const normal = records.filter(r => db.STORES.includes(r.store));
+  for (let i = 0; i < normal.length; i += BATCH) await api('POST', '/data/batch', { records: normal.slice(i, i + BATCH) });
+  await pushShared(records.filter(r => r.store === 'slists').map(r => r.record), records.filter(r => r.store === 'sitems').map(r => r.record));
   await db.clearOutbox(maxSeq);
   return records.length;
+}
+
+// Shared lists go through their own clerk: the list first (so the cloud knows it), then its items.
+// If the cloud says you're no longer in a list (403/404/410 from the clerk), that list's changes are dropped.
+const GONE = [403, 404, 410];
+async function pushShared(lists, items) {
+  const dead = new Set();
+  for (const l of lists) {
+    try { await api('POST', '/shared/lists', { id: l.id, title: l.title, updatedAt: l.updatedAt, deletedAt: l.deletedAt, link: l.link || '', displayName: S.settings.sharedName || '' }); }
+    catch (err) { if (err.fromClerk && GONE.includes(err.status)) dead.add(l.id); else throw err; }
+  }
+  const byList = new Map();
+  for (const it of items) if (!dead.has(it.listId)) byList.set(it.listId, [...(byList.get(it.listId) || []), it]);
+  for (const [listId, recs] of byList) {
+    for (let i = 0; i < recs.length; i += BATCH) {
+      try { await api('POST', '/shared/items/batch', { listId, records: recs.slice(i, i + BATCH) }); }
+      catch (err) { if (err.fromClerk && GONE.includes(err.status)) break; throw err; }
+    }
+  }
+}
+async function pullShared() {
+  const since = await db.getMeta('sharedCursor', null);
+  let res;
+  try { res = await api('GET', '/shared' + (since ? '?since=' + encodeURIComponent(since) : '')); }
+  catch (err) { if (err.status === 404 && !err.fromClerk) return 0; throw err; } // back office not updated for shared lists yet
+  const n = await Shared.applyRemote(res);
+  await db.setMeta('sharedCursor', res.cursor);
+  return n;
+}
+
+// ----- things you do on purpose with shared lists (these need the internet) -----
+const needOnline = () => { if (!navigator.onLine) throw new Error('you need to be online for this'); };
+export async function inviteCode(listId) {
+  needOnline();
+  await push(); // the cloud must know the list exists before it can invite anyone
+  return api('POST', `/shared/lists/${encodeURIComponent(listId)}/invite`, {});
+}
+export async function joinWithCode(code) {
+  needOnline();
+  const res = await api('POST', '/shared/join', { code, displayName: S.settings.sharedName || '' });
+  await pullShared(); // brings every item of the list you just joined
+  return res.list;
+}
+export async function leaveList(listId) {
+  needOnline();
+  await push();
+  await api('POST', `/shared/lists/${encodeURIComponent(listId)}/leave`, {});
+  await Shared.dropLists([listId]);
 }
 
 async function pull() {
@@ -45,7 +102,7 @@ async function pull() {
   const res = await api('GET', '/data' + (since ? '?since=' + encodeURIComponent(since) : ''));
   const n = await A.applyRemote(res.items);
   await db.setMeta('syncCursor', res.cursor);
-  return n;
+  return n + await pullShared();
 }
 
 export async function syncNow() {
@@ -79,6 +136,7 @@ export function schedule(ms = 1500) {
 export async function afterSignIn() {
   set({ state: 'syncing' });
   await db.setMeta('syncCursor', null);
+  await db.setMeta('sharedCursor', null);
   const res = await api('GET', '/data');
   const cloudHas = Object.values(res.items).some(list => list.length);
   if (cloudHas && !A.hasOwnData()) await A.replaceAll(res.items);

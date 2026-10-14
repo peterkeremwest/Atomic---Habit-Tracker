@@ -25,6 +25,17 @@ export function newRecord(prefix, fields) {
   return { id: uid(prefix), sourceApp: SOURCE_APP, createdAt: t, updatedAt: t, deletedAt: null, ...fields };
 }
 
+// A web address typed by a person -> a safe http(s) address, '' for empty, or null if it isn't one.
+// "store.com/list" becomes "https://store.com/list". Only http and https are ever allowed.
+export function cleanUrl(input) {
+  const v = String(input ?? '').trim();
+  if (!v) return '';
+  if (v.length > 500 || /\s/.test(v)) return null;
+  if (/^https?:\/\/[^\s/]+/i.test(v)) return v;
+  if (/^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/?#]\S*)?$/i.test(v)) return 'https://' + v;
+  return null;
+}
+
 // ---------- dates (local calendar days as 'YYYY-MM-DD' keys) ----------
 const pad = n => String(n).padStart(2, '0');
 export const toKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -376,7 +387,7 @@ export function parseRange(str, { loose = false } = {}) {
 // Pull #tags out of the text. Returns { rest, tags:[{name, sub}], special:Set }
 function takeTags(text) {
   const special = new Set(), tags = [];
-  const rest = text.replace(/#([\p{L}\p{N}_-]+)(?:[./]([\p{L}\p{N}_ -]+?))?(?=$|[\s,:])/gu, (_, name, sub) => {
+  const rest = text.replace(/(?<![^\s])#([\p{L}\p{N}_-]+)(?:[./]([\p{L}\p{N}_ -]+?))?(?=$|[\s,:])/gu, (_, name, sub) => {
     const l = name.toLowerCase();
     if (['list', 'checklist'].includes(l)) { special.add('list'); return ' '; }
     if (['timeblock', 'block', 'tb', 'schedule'].includes(l)) { special.add('block'); return ' '; }
@@ -386,6 +397,7 @@ function takeTags(text) {
     if (l === 'habit') { special.add('habit'); return ' '; }
     if (['ongoing', 'goal', 'goals', 'someday', 'anytime'].includes(l)) { special.add('ongoing'); return ' '; }
     if (['note', 'notes'].includes(l)) { special.add('note'); return ' '; }
+    if (['shared', 'together', 'coop'].includes(l)) { special.add('shared'); return ' '; }
     tags.push({ name, sub: sub ? sub.trim() : null });
     return ' ';
   });
@@ -473,6 +485,14 @@ export function parseQuickAdd(text, elements = [], isotopes = [], today = todayK
     const title = clean(ci >= 0 ? body.slice(0, ci) : body);
     const items = ci >= 0 ? body.slice(ci + 1).split(/[,;\n]/).map(clean).filter(Boolean) : [];
     return [{ ...base, kind: 'note', title: title || 'Note', items }];
+  }
+
+  // ----- list shared with one other person: "#shared errands: milk, stamps" -----
+  if (special.has('shared')) {
+    const ci = body.indexOf(':');
+    const title = clean(ci >= 0 ? body.slice(0, ci) : body);
+    const items = ci >= 0 ? body.slice(ci + 1).split(/[,;\n]/).map(clean).filter(Boolean) : [];
+    return [{ kind: 'shared', title: title || 'Shared list', items }];
   }
 
   // ----- expense list: "#expense car repair: tires $10 brakes $50 labor $40", or any "title: thing $amount" -----
