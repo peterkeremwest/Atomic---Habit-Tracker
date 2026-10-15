@@ -323,7 +323,7 @@ export function openSearch(onPick) {
       const hits = live(S.atoms).filter(a => [a.title, a.note, ...(a.items || []).map(i => i.text)].some(t => (t || '').toLowerCase().includes(q))).slice(0, 40);
       out.innerHTML = hits.length ? hits.map(a => {
         const el = A.elementById(a.elementId);
-        const when = a.kind === 'note' ? (a.pinned ? 'in notes · on Today' : 'in notes') : a.kind === 'task' && a.ongoing && !a.completedOn ? 'ongoing' : a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
+        const when = a.kind === 'note' ? (a.pinned ? 'in notes · on Today' : 'in notes') : a.kind === 'task' && a.ongoing && !a.completedOn ? 'ongoing' : a.kind === 'task' ? (a.completedOn ? `done ${M.shortDate(a.completedOn)}${a.doneStamp ? ' · checked ' + new Date(a.doneStamp).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + (a.doneDevice ? ' on ' + a.doneDevice : '') : ''}` : a.dueDate ? `due ${M.shortDate(a.dueDate)}` : 'no date')
           : a.kind === 'block' ? (a.date ? `${M.shortDate(a.date)} ${M.fmtTime(a.start)}` : `${M.describeRepeat(a)} ${M.fmtTime(a.start)}`)
           : a.kind === 'habit' ? M.describeRepeat(a) : a.kind === 'expense' ? `total ${M.fmtMoney(M.expenseTotal(a))}${a.completedOn ? ' · paid ' + M.shortDate(a.completedOn) : ''}` : a.completedOn ? `finished ${M.shortDate(a.completedOn)}` : 'open';
         return `<button class="hit" data-id="${a.id}" role="listitem"><span>${esc(a.title)}</span>

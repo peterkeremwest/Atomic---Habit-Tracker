@@ -26,7 +26,7 @@ export function sharedCard(l) {
     <ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
       <button class="chk small vt" data-action="sitem" data-id="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
       <span class="itxt">${linkify(i.text)}</span>${i.done ? `<span class="by">${esc(Shared.whoChecked(l, i))}</span>` : ''}
-      <button class="rm vt" data-action="sremove" data-id="${i.id}" aria-label="Remove ${esc(i.text)}">×</button></li>`).join('')}
+      <button class="ed vt" data-action="sedit" data-id="${i.id}" aria-label="Edit ${esc(i.text)}">✎</button><button class="rm vt" data-action="sremove" data-id="${i.id}" aria-label="Remove ${esc(i.text)}">×</button></li>`).join('')}
     </ul>
     <form class="additem" data-form="addsitem" data-id="${l.id}"><input class="field" name="t" maxlength="200" placeholder="+ add item" aria-label="Add item to ${esc(l.title)}" autocomplete="off"></form>
   </div>`;

@@ -118,10 +118,17 @@ export async function addAtom(fields) {
   if (!fields.title || !fields.title.trim()) return null;
   return save('atoms', M.makeAtom(fields));
 }
+// Every change of a task's done state is stamped with the exact time and the device that made it
+// (doneStamp / doneDevice). Used to settle conflicts between devices, and to see how a task got checked.
+const thisDevice = () => (/Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? 'phone' : 'computer');
 export async function updateAtom(id, patch) {
   const a = S.atoms.find(x => x.id === id);
   if (!a) return;
-  return save('atoms', { ...a, ...patch });
+  const next = { ...a, ...patch };
+  if ('completedOn' in patch && (patch.completedOn || null) !== (a.completedOn || null)) {
+    next.doneStamp = M.nowIso(); next.doneDevice = thisDevice();
+  }
+  return save('atoms', next);
 }
 export const deleteAtom = id => updateAtom(id, { deletedAt: M.nowIso() });
 
@@ -253,13 +260,37 @@ export async function addListItems(atomId, texts) {
   const a = S.atoms.find(x => x.id === atomId); if (!a) return;
   const add = texts.map(t => t.trim()).filter(Boolean).map(text => ({ id: M.uid('li'), text, done: false }));
   if (!add.length) return;
-  return updateAtom(atomId, { items: [...a.items, ...add], completedOn: null });
+  return updateAtom(atomId, { items: [...a.items, ...add], ...(a.kind === 'note' ? {} : { completedOn: null }) });
+}
+// what happens to a list's / task's done state when its items change: lists and tasks with steps finish when every
+// item is checked; notes never finish; an expense list's paid state and a task with no steps left are left alone
+function itemsPatch(a, items) {
+  if (a.kind === 'note' || a.kind === 'expense') return { items };
+  if (a.kind === 'task' && !items.length) return { items };
+  const all = items.length > 0 && items.every(i => i.done);
+  return { items, completedOn: all ? (a.completedOn || M.todayKey()) : null };
 }
 export async function removeListItem(atomId, itemId) {
   const a = S.atoms.find(x => x.id === atomId); if (!a) return;
-  const items = a.items.filter(i => i.id !== itemId);
-  const all = items.length && items.every(i => i.done);
-  return updateAtom(atomId, { items, completedOn: all ? (a.completedOn || M.todayKey()) : null });
+  return updateAtom(atomId, itemsPatch(a, a.items.filter(i => i.id !== itemId)));
+}
+// change the text of one item (an expense cost is typed as "name $amount"). Returns 'ok', 'empty' or 'one'.
+export async function editListItem(atomId, itemId, raw) {
+  const a = S.atoms.find(x => x.id === atomId);
+  const it = a?.items?.find(x => x.id === itemId); if (!it) return 'empty';
+  let next;
+  if (a.kind === 'expense') {
+    const c = M.parseCostLine(String(raw).trim());
+    if (!c.length) return 'empty';
+    if (c.length > 1) return 'one';
+    next = { ...it, text: c[0].text, cents: c[0].cents || 0 };
+  } else {
+    const text = String(raw).trim().slice(0, 200);
+    if (!text) return 'empty';
+    next = { ...it, text };
+  }
+  await updateAtom(atomId, { items: a.items.map(x => (x.id === itemId ? next : x)) });
+  return 'ok';
 }
 
 // ---------- expense lists ----------
@@ -357,8 +388,9 @@ export async function importData(json) {
   let n = 0;
   for (const s of db.STORES) {
     const incoming = Array.isArray(json[s]) ? json[s] : [];
-    const { merged, changed } = M.mergeRecords(S[s], incoming);
+    const { merged, changed, patched } = M.mergeRecords(S[s], incoming);
     if (changed.length) { await db.put(s, changed, { keepStamp: true }); n += changed.length; }
+    if (patched.length) { await db.put(s, patched); n += patched.length; }
     S[s] = merged;
   }
   await dedupe();
@@ -381,10 +413,11 @@ export async function applyRemote(itemsByStore) {
   for (const s of db.STORES) {
     const incoming = itemsByStore?.[s] || [];
     if (!incoming.length) continue;
-    const { merged, changed } = M.mergeRecords(S[s], incoming);
-    if (!changed.length) continue;
+    const { merged, changed, patched } = M.mergeRecords(S[s], incoming);
+    if (!changed.length && !patched.length) continue;
     await db.putQuiet(s, changed);
-    S[s] = merged; n += changed.length;
+    if (patched.length) await db.put(s, patched); // a newer check-off beat the incoming copy: send it on
+    S[s] = merged; n += changed.length + patched.length;
   }
   if (n) { await dedupe(); reindex(); emit(); }
   return n;

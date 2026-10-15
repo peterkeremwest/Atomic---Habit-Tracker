@@ -97,6 +97,19 @@ assert.equal(M.mergeRecords([a1], [b1]).changed.length, 1); assert.equal(M.merge
 assert.equal(M.describeRepeat(d), 'every Monday, Wednesday & Friday');
 assert.equal(M.describeRepeat(mo), 'every month on the 31st');
 console.log('model tests passed');
+{ // a stale copy from another device can't reopen a task that was checked later (done-stamp merge)
+  const checked = { id: 't', kind: 'task', title: 'x', completedOn: '2026-10-10', doneStamp: '2026-10-10T20:00:00.000Z', doneDevice: 'phone', updatedAt: '2026-10-10T20:00:00.000Z' };
+  const staleButNewer = { id: 't', kind: 'task', title: 'x', completedOn: null, order: 3, updatedAt: '2026-10-12T09:00:00.000Z' }; // saved for a drag on the PC
+  let r = M.mergeRecords([checked], [staleButNewer]);
+  assert.equal(r.patched.length, 1); assert.equal(r.patched[0].completedOn, '2026-10-10'); assert.equal(r.patched[0].order, 3);
+  assert.equal(r.merged[0].completedOn, '2026-10-10'); assert.equal(r.changed.length, 0);
+  r = M.mergeRecords([staleButNewer], [checked]); // same answer from the other side
+  assert.equal(r.patched.length, 1); assert.equal(r.merged[0].completedOn, '2026-10-10'); assert.equal(r.merged[0].order, 3);
+  const reopened = { ...checked, completedOn: null, doneStamp: '2026-10-13T08:00:00.000Z', updatedAt: '2026-10-13T08:00:00.000Z' }; // a real uncheck still wins
+  r = M.mergeRecords([checked], [reopened]); assert.equal(r.patched.length, 0); assert.equal(r.merged[0].completedOn, null);
+  assert.equal(M.mergeRecords([{ id: 'l', kind: 'list', updatedAt: '2026-01-02' }], [{ id: 'l', kind: 'list', updatedAt: '2026-01-03' }]).changed.length, 1);
+  console.log('done-stamp merge tests passed');
+}
 {
   const q = t => M.parseQuickAdd(t, elements, isotopes, T)[0];
   let x = q('do dishes #onetime'); assert.equal(x.kind, 'task'); assert.equal(x.newCategory, null); assert.equal(x.title, 'do dishes');

@@ -357,3 +357,14 @@ nav.tabs a { white-space: nowrap; }
 .items li.done .ilink { color: var(--muted); }
 .chiplink { color: var(--fg); border: 1px solid var(--line); padding: 0 8px; font-size: 15px; text-decoration: none; line-height: 1.5; }
 .chiplink:active { background: rgba(var(--fg-rgb), .2); }
+
+/* v0.2.6: edit (pencil) and remove (x) on every list item, in every kind of list */
+.items li .itxt, .costs li .itxt { min-width: 0; overflow-wrap: anywhere; }
+.items li .ed, .items li .rm, .costs li .ed, .costs li .rm { flex: none; color: var(--dim); min-width: 32px; min-height: 28px; font-size: 20px; line-height: 1; }
+.items li .ed { margin-left: auto; font-size: 17px; }
+.items li .by + .ed { margin-left: 4px; }
+.items li .ed:active, .costs li .ed:active { color: var(--fg); }
+.items li .rm:active, .costs li .rm:active { color: var(--warn); }
+.costs li .ed { margin-left: 2px; font-size: 16px; }
+.costs li .ed, .costs li .rm { min-width: 28px; align-self: center; }
+.items.steps li .ed, .items.steps li .rm { min-height: 24px; }

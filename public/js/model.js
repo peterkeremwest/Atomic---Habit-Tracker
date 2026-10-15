@@ -674,13 +674,30 @@ export function weekReview(atoms, logsFor, ws, today = todayKey()) {
 }
 
 // ---------- import merge (same newest-wins rule the cloud sync will use) ----------
+// Newest updatedAt wins for the whole record, EXCEPT the "done" state of a task or expense list: that is
+// decided by doneStamp (the time of the last check/uncheck), so an older copy from another device that was
+// saved for an unrelated reason (a drag, a pin, a move) can never silently reopen a task checked elsewhere.
+// `patched` = records whose done state was carried over from the losing copy; callers save them as new
+// edits (stamped now and queued) so every device and the cloud end up with the same answer.
+const DONE_KINDS = ['task', 'expense'];
+export function keepNewerDone(win, lose) {
+  if (!win || !lose || !DONE_KINDS.includes(win.kind) || win.kind !== lose.kind) return win;
+  if (String(lose.doneStamp || '') <= String(win.doneStamp || '')) return win;
+  if ((lose.completedOn || null) === (win.completedOn || null)) return win;
+  return { ...win, completedOn: lose.completedOn || null, doneStamp: lose.doneStamp, doneDevice: lose.doneDevice || null };
+}
 export function mergeRecords(local, incoming) {
   const byId = new Map(local.map(r => [r.id, r]));
-  const changed = [];
+  const changed = [], patched = [];
   for (const r of incoming) {
     if (!r || typeof r.id !== 'string') continue;
     const cur = byId.get(r.id);
-    if (!cur || String(r.updatedAt) > String(cur.updatedAt)) { byId.set(r.id, r); changed.push(r); }
+    if (!cur) { byId.set(r.id, r); changed.push(r); continue; }
+    const incomingWins = String(r.updatedAt) > String(cur.updatedAt);
+    const win = incomingWins ? r : cur;
+    const fixed = keepNewerDone(win, incomingWins ? cur : r);
+    if (fixed !== win) { byId.set(r.id, fixed); patched.push(fixed); }
+    else if (incomingWins) { byId.set(r.id, r); changed.push(r); }
   }
-  return { merged: [...byId.values()], changed };
+  return { merged: [...byId.values()], changed, patched };
 }

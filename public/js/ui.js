@@ -46,6 +46,32 @@ export function openLinkSheet({ title, current = '', onSave }) {
   });
 }
 
+// Edit one item of a list, note, task steps, expense list or shared list. onSave(text) returns an error message to
+// keep the sheet open, or nothing when it saved. onRemove (optional) adds a REMOVE button.
+export function openItemEdit({ label = 'ITEM', value = '', hint = '', maxlength = 200, onSave, onRemove }) {
+  openSheet(`<h2>EDIT ${esc(label)}</h2>
+    <form class="form" id="itemForm" autocomplete="off">
+      ${hint ? `<p class="dim" style="font-size:13px;margin:0 0 4px">${esc(hint)}</p>` : ''}
+      <label for="it-text">${esc(label)}</label>
+      <input class="field" id="it-text" name="t" maxlength="${maxlength}" required value="${esc(value)}">
+      <p class="overdue" id="it-err" role="alert" style="font-size:13px;min-height:1em;margin:8px 0 0"></p>
+      <div class="actions"><button type="button" class="btn vt" data-x="cancel">CANCEL</button>
+        ${onRemove ? '<button type="button" class="btn vt warn" data-x="remove">REMOVE</button>' : ''}<button type="submit" class="btn solid vt">SAVE</button></div>
+    </form>`, root => {
+    const f = root.querySelector('#itemForm'), err = root.querySelector('#it-err');
+    root.querySelector('[data-x=cancel]').onclick = closeSheet;
+    const rm = root.querySelector('[data-x=remove]');
+    if (rm) rm.onclick = async () => { closeSheet(); await onRemove(); };
+    setTimeout(() => { f.t.focus(); f.t.select(); }, 50);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const msg = await onSave(f.t.value);
+      if (msg) { err.textContent = msg; return; }
+      closeSheet();
+    });
+  });
+}
+
 let toastTimer, undoHandler = null;
 export const setUndoHandler = fn => { undoHandler = fn; };
 // toast('saved', { undo: true }) shows an UNDO button for 5 seconds

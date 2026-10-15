@@ -2,7 +2,7 @@
 import { S, load, onChange } from './state.js';
 import * as A from './state.js';
 import * as M from './model.js';
-import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler } from './ui.js';
+import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler, openItemEdit } from './ui.js';
 import * as Today from './views/today.js';
 import * as Habits from './views/habits.js';
 import * as Calendar from './views/calendar.js';
@@ -166,6 +166,39 @@ const actions = {
     const it = S.sitems.find(x => x.id === d.id); if (!it) return;
     await A.undoable('sremove', () => Shared.removeItem(d.id));
     toast(`removed · ${it.text}`, { undo: true });
+  },
+  // v0.2.6: edit or remove one item of any list, note, task steps, expense list or shared list
+  itemedit(d) {
+    const a = S.atoms.find(x => x.id === d.id), it = a?.items?.find(i => i.id === d.item); if (!it) return;
+    const cost = a.kind === 'expense';
+    openItemEdit({
+      label: cost ? 'COST' : 'ITEM', value: cost ? M.costLine(it) : it.text,
+      hint: cost ? 'name and amount, like oil change $30' : '',
+      onSave: async v => {
+        let r; await A.undoable('itemedit', async () => { r = await A.editListItem(a.id, it.id, v); });
+        if (r === 'empty') return 'type something first';
+        if (r === 'one') return 'one cost at a time, like oil change $30';
+        toast('saved', { undo: true });
+      },
+      onRemove: async () => { await A.undoable('itemrm', () => A.removeListItem(a.id, it.id)); toast(`removed · ${it.text}`, { undo: true }); },
+    });
+  },
+  async itemrm(d) {
+    const a = S.atoms.find(x => x.id === d.id), it = a?.items?.find(i => i.id === d.item); if (!it) return;
+    await A.undoable('itemrm', () => A.removeListItem(d.id, d.item));
+    toast(`removed · ${it.text}`, { undo: true });
+  },
+  sedit(d) {
+    const it = S.sitems.find(x => x.id === d.id); if (!it) return;
+    openItemEdit({
+      label: 'ITEM', value: it.text,
+      onSave: async v => {
+        const ok = await A.undoable('sedit', () => Shared.editItem(it.id, v));
+        if (!ok) return 'type something first';
+        toast('saved', { undo: true });
+      },
+      onRemove: async () => { await A.undoable('sremove', () => Shared.removeItem(it.id)); toast(`removed · ${it.text}`, { undo: true }); },
+    });
   },
   smenu: d => openSharedMenu(d.id),
   joinshared: () => openJoin(),

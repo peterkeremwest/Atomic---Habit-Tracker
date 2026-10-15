@@ -15,11 +15,14 @@ function catLabel(a) {
 export const fmtClock = ms => { const s = Math.ceil(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const handle = (a, drag) => drag ? `<span class="drag" data-drag="${a.id}" aria-hidden="true" title="drag to reorder">⠿</span>` : '';
 
+const itemTools = (a, i) => `<button class="ed vt" data-action="itemedit" data-id="${a.id}" data-item="${i.id}" aria-label="Edit ${esc(i.text)}">✎</button><button class="rm vt" data-action="itemrm" data-id="${a.id}" data-item="${i.id}" aria-label="Remove ${esc(i.text)}">×</button>`;
+
 function steps(a) {
   if (!a.items?.length) return '';
   return `<ul class="items steps">${a.items.map(i => `<li class="${i.done ? 'done' : ''}">
     <button class="chk small vt" data-action="item" data-id="${a.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} step ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-    <span class="itxt">${linkify(i.text)}</span></li>`).join('')}</ul>`;
+    <span class="itxt">${linkify(i.text)}</span>${itemTools(a, i)}</li>`).join('')}</ul>
+  <form class="additem" data-form="additem" data-id="${a.id}"><input class="field" name="t" maxlength="120" placeholder="+ add step" aria-label="Add a step to ${esc(a.title)}"></form>`;
 }
 
 export function atomRow(a, k, { just = null, drag = true } = {}) {
@@ -104,7 +107,7 @@ function listCard(l, k, just, drag = true) {
     </div>
     <ul class="items">${l.items.map(i => `<li class="${i.done ? 'done' : ''}">
       <button class="chk small vt" data-action="item" data-id="${l.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${linkify(i.text)}</span></li>`).join('')}
+      <span class="itxt">${linkify(i.text)}</span>${itemTools(l, i)}</li>`).join('')}
     </ul>
     <form class="additem" data-form="additem" data-id="${l.id}"><input class="field" name="t" maxlength="80" placeholder="+ add item" aria-label="Add item to ${esc(l.title)}"></form>
   </div>`;
@@ -132,11 +135,11 @@ function expenseCard(l, k, just, drag = true) {
     </div>
     <ul class="costs">${l.items.map((i, j) => `<li>
       <i class="sw" style="background:${shade(j)}" aria-hidden="true"></i><span class="itxt">${esc(i.text)}</span><span class="lead" aria-hidden="true"></span>
-      <span class="amt vt">${M.fmtMoney(i.cents || 0)}</span><span class="share">${pct(i.cents)}%</span></li>`).join('')}
+      <span class="amt vt">${M.fmtMoney(i.cents || 0)}</span><span class="share">${pct(i.cents)}%</span>${itemTools(l, i)}</li>`).join('')}
     </ul>
     <div class="exptotal"><span class="vt">TOTAL</span><span class="vt glow">${M.fmtMoney(total)}</span></div>
     ${bar}
-    ${paid ? '' : `<form class="additem" data-form="addcost" data-id="${l.id}"><input class="field" name="t" maxlength="120" placeholder="+ add cost, like oil change $30" aria-label="Add cost to ${esc(l.title)}"></form>`}
+    <form class="additem" data-form="addcost" data-id="${l.id}"><input class="field" name="t" maxlength="120" placeholder="+ add cost, like oil change $30" aria-label="Add cost to ${esc(l.title)}"></form>
   </div>`;
 }
 
@@ -157,7 +160,7 @@ export function noteCard(n, { drag = true, where = 'today' } = {}) {
     </div>
     ${items.length ? `<ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
       <button class="chk small vt" data-action="item" data-id="${n.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${linkify(i.text)}</span></li>`).join('')}</ul>` : ''}
+      <span class="itxt">${linkify(i.text)}</span>${itemTools(n, i)}</li>`).join('')}</ul>` : ''}
     ${n.note ? `<p class="ntext">${linkify(n.note)}</p>` : ''}
     <form class="additem" data-form="additem" data-id="${n.id}"><input class="field" name="t" maxlength="120" placeholder="+ add to ${esc(n.title)}" aria-label="Add to ${esc(n.title)}"></form>
   </div>`;

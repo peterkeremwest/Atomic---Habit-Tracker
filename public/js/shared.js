@@ -45,6 +45,12 @@ export async function toggleItem(itemId) {
   const done = !it.done;
   return save('sitems', { ...it, done, doneBy: done ? me() : null, doneAt: done ? M.nowIso() : null });
 }
+export async function editItem(itemId, text) {
+  const it = S.sitems.find(i => i.id === itemId); if (!it) return false;
+  const t = String(text).trim().slice(0, 200); if (!t) return false;
+  await save('sitems', { ...it, text: t });
+  return true;
+}
 export const removeItem = itemId => {
   const it = S.sitems.find(i => i.id === itemId);
   return it && save('sitems', { ...it, deletedAt: M.nowIso() });
