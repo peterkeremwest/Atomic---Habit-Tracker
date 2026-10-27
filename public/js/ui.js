@@ -22,10 +22,10 @@ export function linkChip(url) {
   return `<a class="chiplink vt" href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open link to ${esc(host)}">▶ ${esc(host)}</a>`;
 }
 // Sheet for adding, changing or removing a list's link. onSave(url) gets '' when it is removed.
-export function openLinkSheet({ title, current = '', hint = '', onSave }) {
+export function openLinkSheet({ title, current = '', onSave }) {
   openSheet(`<h2>LINK FOR ${esc(String(title).toUpperCase())}</h2>
     <form class="form" id="linkForm" autocomplete="off">
-      <p class="dim" style="font-size:13px;margin:0 0 4px">${esc(hint || 'a web address, like a shopping list in another app. it shows as a button on the list.')}</p>
+      <p class="dim" style="font-size:13px;margin:0 0 4px">a web address, like a shopping list in another app. it shows as a button on the list.</p>
       <label for="lk-url">WEB ADDRESS</label>
       <input class="field" id="lk-url" name="u" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://" value="${esc(current)}">
       <p class="overdue" id="lk-err" role="alert" style="font-size:13px;min-height:1em;margin:8px 0 0"></p>
@@ -52,6 +52,11 @@ export function openLinkSheet({ title, current = '', hint = '', onSave }) {
 let openBoxKey = null;
 export const getOpenBox = () => openBoxKey;
 export const setOpenBox = k => { openBoxKey = k; };
+// the link is typed right inside the box. Which box is being edited (and what was typed so far) also survives a repaint.
+let editLinkKey = null, linkDraft = '';
+export const getEditLink = () => editLinkKey;
+export const setEditLink = (k, draft = '') => { editLinkKey = k; linkDraft = draft; };
+export const setLinkDraft = v => { linkDraft = v; };
 const isWebLink = u => /^https?:\/\/[^\s/]+/i.test(String(u || ''));
 export function shortLink(url) {
   const s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
@@ -62,10 +67,18 @@ export const itemText = i => `<span class="itxt tap" role="button" tabindex="0" 
 // the box itself. ownerId is the list / note / task the item is in (for a shared list, the item's own id).
 export function itemBox(i, ownerId, shared = false) {
   const has = isWebLink(i.link);
+  const editing = editLinkKey === i.id;
   const ids = `data-id="${esc(ownerId)}"${shared ? '' : ` data-item="${esc(i.id)}"`}`;
-  return `<div class="ibox ${openBoxKey === i.id ? 'open' : ''}" data-box="${esc(i.id)}"><div class="iboxc"><div class="ibox-in">
-    ${has ? `<a class="iopen" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer"><span class="vt">OPEN ↗</span><span class="ihost">${esc(shortLink(i.link))}</span></a>` : '<p class="dim inone">no link on this item yet</p>'}
-    <div class="ibar"><button class="btn vt" data-action="itemlink" ${ids}>${has ? 'CHANGE LINK' : '+ ADD A LINK'}</button></div>
+  return `<div class="ibox ${openBoxKey === i.id ? 'open' : ''}" data-box="${esc(i.id)}"><div class="iboxc"><div class="ibox-in ${editing ? 'editing' : ''}">
+    <div class="iview">
+      ${has ? `<a class="iopen" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer"><span class="vt">OPEN ↗</span><span class="ihost">${esc(shortLink(i.link))}</span></a>` : '<p class="dim inone">no link on this item yet</p>'}
+      <div class="ibar"><button class="btn vt" data-action="itemlinkedit" ${ids}>${has ? 'CHANGE LINK' : '+ ADD A LINK'}</button></div>
+    </div>
+    <form class="iedit" data-form="itemlink" ${ids} autocomplete="off">
+      <input class="field" name="u" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://" value="${esc(editing ? linkDraft : (has ? i.link : ''))}" aria-label="Web address for ${esc(i.text)}">
+      <p class="overdue ierr" role="alert"></p>
+      <div class="ibar"><button type="submit" class="btn solid vt">SAVE</button>${has ? `<button type="button" class="btn vt warn" data-action="itemlinkrm" ${ids}>REMOVE</button>` : ''}<button type="button" class="btn vt" data-action="itemlinkx" ${ids}>CANCEL</button></div>
+    </form>
   </div></div></div>`;
 }
 

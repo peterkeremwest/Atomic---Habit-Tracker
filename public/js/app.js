@@ -2,7 +2,7 @@
 import { S, load, onChange } from './state.js';
 import * as A from './state.js';
 import * as M from './model.js';
-import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler, openItemEdit, openLinkSheet, getOpenBox, setOpenBox } from './ui.js';
+import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler, openItemEdit, getOpenBox, setOpenBox, setEditLink, setLinkDraft } from './ui.js';
 import * as Today from './views/today.js';
 import * as Habits from './views/habits.js';
 import * as Calendar from './views/calendar.js';
@@ -206,23 +206,26 @@ const actions = {
     document.querySelectorAll('.ibox.open').forEach(b => b.classList.remove('open'));
     document.querySelectorAll('.itxt.tap[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
     setOpenBox(was ? null : d.key);
+    setEditLink(null);
+    document.querySelectorAll('.ibox-in.editing').forEach(x => x.classList.remove('editing'));
     if (was) return;
     document.querySelectorAll('.ibox').forEach(b => { if (b.dataset.box === d.key) b.classList.add('open'); });
     document.querySelectorAll('.itxt.tap').forEach(t => { if (t.dataset.key === d.key) t.setAttribute('aria-expanded', 'true'); });
   },
-  itemlink(d) {
-    const shared = !d.item;
-    const it = shared ? S.sitems.find(x => x.id === d.id) : S.atoms.find(x => x.id === d.id)?.items?.find(i => i.id === d.item);
-    if (!it) return;
-    openLinkSheet({
-      title: it.text.length > 26 ? it.text.slice(0, 25) + '…' : it.text, current: it.link || '',
-      hint: 'a web address for this item, like the page where you will buy it. tap the item to open its box, then OPEN.',
-      onSave: async url => {
-        await A.undoable('itemlink', () => (shared ? Shared.setItemLink(it.id, url) : A.setItemLink(d.id, it.id, url)));
-        toast(url ? 'link saved' : 'link removed', { undo: true });
-      },
-    });
+  // the link is edited inside the box: CHANGE LINK / + ADD A LINK shows the typing field there, no pop-up
+  itemlinkedit(d) {
+    const key = d.item || d.id;
+    const it = linkItem(d); if (!it) return;
+    setEditLink(key, it.link || '');
+    const box = [...document.querySelectorAll('.ibox')].find(b => b.dataset.box === key);
+    box?.querySelector('.ibox-in')?.classList.add('editing');
+    const inp = box?.querySelector('.iedit input'); inp?.focus(); inp?.select();
   },
+  itemlinkx(d) {
+    setEditLink(null);
+    document.querySelectorAll('.ibox-in.editing').forEach(x => x.classList.remove('editing'));
+  },
+  itemlinkrm: d => saveItemLink(d, ''),
   smenu: d => openSharedMenu(d.id),
   joinshared: () => openJoin(),
   lowonly() { S.ui.lowOnly = !S.ui.lowOnly; render(); },
@@ -277,6 +280,17 @@ document.addEventListener('click', e => {
   if (fn) { e.preventDefault(); fn(t.dataset); }
 });
 
+const linkItem = d => (d.item ? S.atoms.find(x => x.id === d.id)?.items?.find(i => i.id === d.item) : S.sitems.find(x => x.id === d.id));
+async function saveItemLink(d, url) {
+  const it = linkItem(d); if (!it) return;
+  setEditLink(null);
+  await A.undoable('itemlink', () => (d.item ? A.setItemLink(d.id, it.id, url) : Shared.setItemLink(it.id, url)));
+  toast(url ? 'link saved' : 'link removed', { undo: true });
+}
+
+// keeps what was typed in a link field if the screen repaints (for example a sync arrives)
+main.addEventListener('input', e => { if (e.target.closest?.('.iedit')) setLinkDraft(e.target.value); });
+
 // keyboard: Enter or Space on an item opens its box
 main.addEventListener('keydown', e => {
   const t = e.target.closest?.('.itxt.tap');
@@ -303,6 +317,11 @@ main.addEventListener('change', async e => {
 main.addEventListener('submit', async e => {
   const f = e.target;
   e.preventDefault();
+  if (f.dataset.form === 'itemlink') {
+    const url = M.cleanUrl(f.u.value);
+    if (url === null) { f.querySelector('.ierr').textContent = "that doesn't look like a web address"; return; }
+    return saveItemLink(f.dataset, url);
+  }
   if (f.dataset.form === 'addiso') {
     const name = f.t.value.trim(); if (!name) return;
     await A.addIsotope(f.dataset.id, name); toast('subcategory added');

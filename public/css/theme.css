@@ -392,3 +392,10 @@ nav.tabs a { white-space: nowrap; }
 .inone { margin: 0; font-size: 14px; }
 .ibar { display: flex; gap: 8px; margin-top: 8px; }
 .ibar .btn { font-size: 16px; padding: 2px 10px; min-height: 28px; }
+/* the link is typed inside the box (v0.2.8) */
+.ibox-in .iedit { display: none; }
+.ibox-in.editing .iedit { display: block; }
+.ibox-in.editing .iview { display: none; }
+.iedit .field { font-size: 15px; padding: 6px 8px; }
+.ierr { font-size: 13px; min-height: 1em; margin: 6px 0 0; }
+.iedit .ibar { margin-top: 4px; flex-wrap: wrap; }
