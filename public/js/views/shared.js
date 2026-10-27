@@ -6,7 +6,7 @@ import * as Sync from '../sync.js';
 import * as Auth from '../auth.js';
 import * as db from '../db.js';
 import { cloudReady } from '../config.js';
-import { esc, openSheet, closeSheet, toast, linkify, linkChip, openLinkSheet } from '../ui.js';
+import { esc, openSheet, closeSheet, toast, linkChip, openLinkSheet, itemText, itemBox } from '../ui.js';
 import { openAccount } from './account.js';
 
 export function sharedCard(l) {
@@ -23,10 +23,10 @@ export function sharedCard(l) {
       </div>
       <button class="more" data-action="smenu" data-id="${l.id}" aria-label="More options for ${esc(l.title)}">⋯</button>
     </div>
-    <ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
+    <ul class="items">${items.map(i => `<li class="hb ${i.done ? 'done' : ''}"><div class="irow">
       <button class="chk small vt" data-action="sitem" data-id="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${linkify(i.text)}</span>${i.done ? `<span class="by">${esc(Shared.whoChecked(l, i))}</span>` : ''}
-      <button class="ed vt" data-action="sedit" data-id="${i.id}" aria-label="Edit ${esc(i.text)}">✎</button><button class="rm vt" data-action="sremove" data-id="${i.id}" aria-label="Remove ${esc(i.text)}">×</button></li>`).join('')}
+      ${itemText(i)}${i.done ? `<span class="by">${esc(Shared.whoChecked(l, i))}</span>` : ''}
+      <button class="ed vt" data-action="sedit" data-id="${i.id}" aria-label="Edit ${esc(i.text)}">✎</button><button class="rm vt" data-action="sremove" data-id="${i.id}" aria-label="Remove ${esc(i.text)}">×</button></div>${itemBox(i, i.id, true)}</li>`).join('')}
     </ul>
     <form class="additem" data-form="addsitem" data-id="${l.id}"><input class="field" name="t" maxlength="200" placeholder="+ add item" aria-label="Add item to ${esc(l.title)}" autocomplete="off"></form>
   </div>`;

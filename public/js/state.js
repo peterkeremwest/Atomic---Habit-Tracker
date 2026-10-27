@@ -293,6 +293,17 @@ export async function editListItem(atomId, itemId, raw) {
   return 'ok';
 }
 
+// v0.2.7: a link on one item of a list, note or task steps ('' removes it). Never touches the done state.
+export async function setItemLink(atomId, itemId, url) {
+  const a = S.atoms.find(x => x.id === atomId); if (!a) return;
+  const items = a.items.map(i => {
+    if (i.id !== itemId) return i;
+    const { link, ...rest } = i;
+    return url ? { ...rest, link: url } : rest;
+  });
+  return updateAtom(atomId, { items });
+}
+
 // ---------- expense lists ----------
 export async function addCosts(atomId, costs) {
   const a = S.atoms.find(x => x.id === atomId); if (!a) return;

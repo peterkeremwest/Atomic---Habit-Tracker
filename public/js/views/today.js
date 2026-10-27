@@ -1,7 +1,7 @@
 // TODAY — everything for the chosen day, grouped by how often it repeats. Checked items stay visible.
 import { S, live, logsFor, elementById, isotopeById, timerLeft, timerRunning, leftovers } from '../state.js';
 import * as M from '../model.js';
-import { esc, foldSection, linkify, linkChip } from '../ui.js';
+import { esc, foldSection, linkify, linkChip, itemText, itemBox } from '../ui.js';
 import * as Shared from '../shared.js';
 import { sharedCard } from './shared.js';
 
@@ -19,9 +19,9 @@ const itemTools = (a, i) => `<button class="ed vt" data-action="itemedit" data-i
 
 function steps(a) {
   if (!a.items?.length) return '';
-  return `<ul class="items steps">${a.items.map(i => `<li class="${i.done ? 'done' : ''}">
+  return `<ul class="items steps">${a.items.map(i => `<li class="hb ${i.done ? 'done' : ''}"><div class="irow">
     <button class="chk small vt" data-action="item" data-id="${a.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} step ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-    <span class="itxt">${linkify(i.text)}</span>${itemTools(a, i)}</li>`).join('')}</ul>
+    ${itemText(i)}${itemTools(a, i)}</div>${itemBox(i, a.id)}</li>`).join('')}</ul>
   <form class="additem" data-form="additem" data-id="${a.id}"><input class="field" name="t" maxlength="120" placeholder="+ add step" aria-label="Add a step to ${esc(a.title)}"></form>`;
 }
 
@@ -105,9 +105,9 @@ function listCard(l, k, just, drag = true) {
       ${handle(l, drag)}
       <button class="more" data-action="menu" data-id="${l.id}" aria-label="More options for ${esc(l.title)}">⋯</button>
     </div>
-    <ul class="items">${l.items.map(i => `<li class="${i.done ? 'done' : ''}">
+    <ul class="items">${l.items.map(i => `<li class="hb ${i.done ? 'done' : ''}"><div class="irow">
       <button class="chk small vt" data-action="item" data-id="${l.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${linkify(i.text)}</span>${itemTools(l, i)}</li>`).join('')}
+      ${itemText(i)}${itemTools(l, i)}</div>${itemBox(i, l.id)}</li>`).join('')}
     </ul>
     <form class="additem" data-form="additem" data-id="${l.id}"><input class="field" name="t" maxlength="80" placeholder="+ add item" aria-label="Add item to ${esc(l.title)}"></form>
   </div>`;
@@ -158,9 +158,9 @@ export function noteCard(n, { drag = true, where = 'today' } = {}) {
       ${handle(n, drag)}
       <button class="more" data-action="menu" data-id="${n.id}" aria-label="More options for ${esc(n.title)}">⋯</button>
     </div>
-    ${items.length ? `<ul class="items">${items.map(i => `<li class="${i.done ? 'done' : ''}">
+    ${items.length ? `<ul class="items">${items.map(i => `<li class="hb ${i.done ? 'done' : ''}"><div class="irow">
       <button class="chk small vt" data-action="item" data-id="${n.id}" data-item="${i.id}" aria-label="${i.done ? 'Uncheck' : 'Check'} ${esc(i.text)}" aria-pressed="${i.done}">[<span class="mark">${i.done ? '✓' : '&nbsp;'}</span>]</button>
-      <span class="itxt">${linkify(i.text)}</span>${itemTools(n, i)}</li>`).join('')}</ul>` : ''}
+      ${itemText(i)}${itemTools(n, i)}</div>${itemBox(i, n.id)}</li>`).join('')}</ul>` : ''}
     ${n.note ? `<p class="ntext">${linkify(n.note)}</p>` : ''}
     <form class="additem" data-form="additem" data-id="${n.id}"><input class="field" name="t" maxlength="120" placeholder="+ add to ${esc(n.title)}" aria-label="Add to ${esc(n.title)}"></form>
   </div>`;

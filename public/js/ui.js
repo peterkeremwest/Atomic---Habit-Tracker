@@ -22,10 +22,10 @@ export function linkChip(url) {
   return `<a class="chiplink vt" href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open link to ${esc(host)}">▶ ${esc(host)}</a>`;
 }
 // Sheet for adding, changing or removing a list's link. onSave(url) gets '' when it is removed.
-export function openLinkSheet({ title, current = '', onSave }) {
+export function openLinkSheet({ title, current = '', hint = '', onSave }) {
   openSheet(`<h2>LINK FOR ${esc(String(title).toUpperCase())}</h2>
     <form class="form" id="linkForm" autocomplete="off">
-      <p class="dim" style="font-size:13px;margin:0 0 4px">a web address, like a shopping list in another app. it shows as a button on the list.</p>
+      <p class="dim" style="font-size:13px;margin:0 0 4px">${esc(hint || 'a web address, like a shopping list in another app. it shows as a button on the list.')}</p>
       <label for="lk-url">WEB ADDRESS</label>
       <input class="field" id="lk-url" name="u" inputmode="url" autocapitalize="none" spellcheck="false" placeholder="https://" value="${esc(current)}">
       <p class="overdue" id="lk-err" role="alert" style="font-size:13px;min-height:1em;margin:8px 0 0"></p>
@@ -44,6 +44,29 @@ export function openLinkSheet({ title, current = '', onSave }) {
       closeSheet(); await onSave(url);
     });
   });
+}
+
+// ---------- v0.2.7: the box that opens under a list item ----------
+// Tap an item and a box opens below it with the item's own link (OPEN goes to the browser). Which box is open is
+// remembered here, so a repaint (for example after saving a link) keeps it open without replaying the animation.
+let openBoxKey = null;
+export const getOpenBox = () => openBoxKey;
+export const setOpenBox = k => { openBoxKey = k; };
+const isWebLink = u => /^https?:\/\/[^\s/]+/i.test(String(u || ''));
+export function shortLink(url) {
+  const s = String(url).replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/$/, '');
+  return s.length > 46 ? s.slice(0, 45) + '…' : s;
+}
+// the item's text: tapping it opens or closes its box. A small ↗ shows that the item has a link.
+export const itemText = i => `<span class="itxt tap" role="button" tabindex="0" aria-expanded="${openBoxKey === i.id}" data-action="itembox" data-key="${esc(i.id)}">${linkify(i.text)}${isWebLink(i.link) ? '<span class="lmark vt" aria-hidden="true">↗</span>' : ''}</span>`;
+// the box itself. ownerId is the list / note / task the item is in (for a shared list, the item's own id).
+export function itemBox(i, ownerId, shared = false) {
+  const has = isWebLink(i.link);
+  const ids = `data-id="${esc(ownerId)}"${shared ? '' : ` data-item="${esc(i.id)}"`}`;
+  return `<div class="ibox ${openBoxKey === i.id ? 'open' : ''}" data-box="${esc(i.id)}"><div class="iboxc"><div class="ibox-in">
+    ${has ? `<a class="iopen" href="${esc(i.link)}" target="_blank" rel="noopener noreferrer"><span class="vt">OPEN ↗</span><span class="ihost">${esc(shortLink(i.link))}</span></a>` : '<p class="dim inone">no link on this item yet</p>'}
+    <div class="ibar"><button class="btn vt" data-action="itemlink" ${ids}>${has ? 'CHANGE LINK' : '+ ADD A LINK'}</button></div>
+  </div></div></div>`;
 }
 
 // Edit one item of a list, note, task steps, expense list or shared list. onSave(text) returns an error message to

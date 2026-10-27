@@ -101,4 +101,15 @@ r = await call('bob', 'POST', '/shared/lists', { id: 'sl_44444444-dddd', title: 
 r = await call('alice', 'POST', '/shared/lists', { id: 'sl_44444444-dddd', title: 'Groceries', updatedAt: T(2), link: 'https://stale.com' });
 assert.equal(r.body.list.link, 'https://other.com/x', 'newest change wins');
 r = await call('alice', 'GET', '/shared'); assert.equal(r.body.lists.find(l => l.id === 'sl_44444444-dddd').link, 'https://other.com/x');
+// ---- v0.2.7: a link on one item. Both people see it; only http(s) is kept; removing it sticks ----
+const L4 = 'sl_44444444-dddd'; // alice and bob are both on this list
+const it4 = (id, text, n, extra = {}) => item(id, text, n, { listId: L4, ...extra });
+r = await call('alice', 'POST', '/shared/items/batch', { listId: L4, records: [it4('si_l1', 'couch', 30, { link: 'https://store.com/couch?id=7' }), it4('si_l2', 'rug', 31, { link: 'javascript:alert(1)' })] });
+assert.deepEqual(r.body.saved, ['si_l1', 'si_l2']);
+r = await call('bob', 'GET', '/shared');
+assert.equal(r.body.items.find(i => i.id === 'si_l1').link, 'https://store.com/couch?id=7', 'the other person gets the item link');
+assert.ok(!('link' in r.body.items.find(i => i.id === 'si_l2')), 'anything but http(s) is dropped');
+r = await call('bob', 'POST', '/shared/items/batch', { listId: L4, records: [it4('si_l1', 'couch', 40)] });
+r = await call('alice', 'GET', '/shared');
+assert.ok(!('link' in r.body.items.find(i => i.id === 'si_l1')), 'a newer copy without a link removes it');
 console.log('shared-list backend tests passed');

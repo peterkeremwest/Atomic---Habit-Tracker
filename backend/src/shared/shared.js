@@ -199,6 +199,8 @@ export function makeHandler(ddb, table) {
         order: Number.isFinite(r.order) ? r.order : 0, createdBy: d.members.includes(r.createdBy) ? r.createdBy : sub,
         createdAt: isIso(r.createdAt) ? r.createdAt : r.updatedAt, updatedAt: r.updatedAt, deletedAt: isIso(r.deletedAt) ? r.deletedAt : null,
       };
+      if (cleanLink(r.link)) rec.link = cleanLink(r.link); // v0.2.7: a link on the item itself
+
       if (JSON.stringify(rec).length > MAX_ITEM_BYTES) throw new HttpError(413, 'that item is too large');
       try {
         await put({ pk: `LIST#${body.listId}`, sk: `ITEM#${rec.id}`, updatedAt: rec.updatedAt, syncedAt, data: rec },

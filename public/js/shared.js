@@ -51,6 +51,12 @@ export async function editItem(itemId, text) {
   await save('sitems', { ...it, text: t });
   return true;
 }
+export async function setItemLink(itemId, url) {
+  const it = S.sitems.find(i => i.id === itemId); if (!it) return false;
+  const { link, ...rest } = it;
+  await save('sitems', url ? { ...rest, link: url } : rest);
+  return true;
+}
 export const removeItem = itemId => {
   const it = S.sitems.find(i => i.id === itemId);
   return it && save('sitems', { ...it, deletedAt: M.nowIso() });

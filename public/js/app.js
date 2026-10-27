@@ -2,7 +2,7 @@
 import { S, load, onChange } from './state.js';
 import * as A from './state.js';
 import * as M from './model.js';
-import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler, openItemEdit } from './ui.js';
+import { toast, onLongPress, closeSheet, openSheet, esc, setUndoHandler, openItemEdit, openLinkSheet, getOpenBox, setOpenBox } from './ui.js';
 import * as Today from './views/today.js';
 import * as Habits from './views/habits.js';
 import * as Calendar from './views/calendar.js';
@@ -200,6 +200,29 @@ const actions = {
       onRemove: async () => { await A.undoable('sremove', () => Shared.removeItem(it.id)); toast(`removed · ${it.text}`, { undo: true }); },
     });
   },
+  // v0.2.7: tap an item to open or close its box; the box holds the item's link
+  itembox(d) {
+    const was = getOpenBox() === d.key;
+    document.querySelectorAll('.ibox.open').forEach(b => b.classList.remove('open'));
+    document.querySelectorAll('.itxt.tap[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+    setOpenBox(was ? null : d.key);
+    if (was) return;
+    document.querySelectorAll('.ibox').forEach(b => { if (b.dataset.box === d.key) b.classList.add('open'); });
+    document.querySelectorAll('.itxt.tap').forEach(t => { if (t.dataset.key === d.key) t.setAttribute('aria-expanded', 'true'); });
+  },
+  itemlink(d) {
+    const shared = !d.item;
+    const it = shared ? S.sitems.find(x => x.id === d.id) : S.atoms.find(x => x.id === d.id)?.items?.find(i => i.id === d.item);
+    if (!it) return;
+    openLinkSheet({
+      title: it.text.length > 26 ? it.text.slice(0, 25) + '…' : it.text, current: it.link || '',
+      hint: 'a web address for this item, like the page where you will buy it. tap the item to open its box, then OPEN.',
+      onSave: async url => {
+        await A.undoable('itemlink', () => (shared ? Shared.setItemLink(it.id, url) : A.setItemLink(d.id, it.id, url)));
+        toast(url ? 'link saved' : 'link removed', { undo: true });
+      },
+    });
+  },
   smenu: d => openSharedMenu(d.id),
   joinshared: () => openJoin(),
   lowonly() { S.ui.lowOnly = !S.ui.lowOnly; render(); },
@@ -249,8 +272,15 @@ document.addEventListener('click', e => {
   const t = e.target.closest('[data-action]');
   if (!t || t.closest('dialog')) return;
   if (t.matches('input')) return; // handled on change
+  if (t.dataset.action === 'itembox' && e.target.closest('a')) return; // a link typed inside the text opens itself
   const fn = actions[t.dataset.action];
   if (fn) { e.preventDefault(); fn(t.dataset); }
+});
+
+// keyboard: Enter or Space on an item opens its box
+main.addEventListener('keydown', e => {
+  const t = e.target.closest?.('.itxt.tap');
+  if (t && (e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); actions.itembox(t.dataset); }
 });
 
 main.addEventListener('change', async e => {

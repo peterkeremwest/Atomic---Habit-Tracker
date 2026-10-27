@@ -368,3 +368,27 @@ nav.tabs a { white-space: nowrap; }
 .costs li .ed { margin-left: 2px; font-size: 16px; }
 .costs li .ed, .costs li .rm { min-width: 28px; align-self: center; }
 .items.steps li .ed, .items.steps li .rm { min-height: 24px; }
+
+/* v0.2.7: tap an item and a box opens under it with the item's link */
+.items li.hb { display: block; padding: 0; }
+.items li.hb > .irow { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.items.steps li.hb > .irow { padding: 1px 0; }
+.itxt.tap { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.itxt.tap:focus-visible { outline: 1px dashed var(--fg); outline-offset: 2px; }
+.itxt.tap[aria-expanded="true"] { text-shadow: 0 0 6px rgba(var(--fg-rgb), .45); }
+.lmark { margin-left: 5px; color: var(--dim); font-size: 16px; }
+.ibox { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s ease; }
+.ibox.open { grid-template-rows: 1fr; }
+.iboxc { min-height: 0; overflow: hidden; }
+.ibox:not(.open) .iboxc { visibility: hidden; transition: visibility 0s .28s; }
+.ibox-in { position: relative; margin: 14px 0 8px 48px; padding: 12px 10px 10px; border: 1px solid var(--dim); background: rgba(var(--fg-rgb), .05); }
+.ibox-in::before { content: 'LINK'; position: absolute; top: -8px; left: 8px; padding: 0 6px; background: var(--bg); color: var(--dim); font: 17px/1 'VT323', monospace; letter-spacing: .08em; }
+.ibox.open .ibox-in { animation: boxopen .36s steps(9, end) both; }
+@keyframes boxopen { from { clip-path: inset(-14px 50% -14px 50%); opacity: .3; } 60% { opacity: 1; } to { clip-path: inset(-14px); opacity: 1; } }
+.iopen { display: flex; align-items: baseline; gap: 10px; border: 1px solid var(--fg); padding: 6px 10px; color: var(--fg); text-decoration: none; }
+.iopen .vt { font-size: 22px; line-height: 1; flex: none; }
+.iopen .ihost { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: 14px; }
+.iopen:active { background: rgba(var(--fg-rgb), .2); }
+.inone { margin: 0; font-size: 14px; }
+.ibar { display: flex; gap: 8px; margin-top: 8px; }
+.ibar .btn { font-size: 16px; padding: 2px 10px; min-height: 28px; }
